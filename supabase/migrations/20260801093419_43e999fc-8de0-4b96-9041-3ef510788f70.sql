@@ -1,0 +1,3 @@
+CREATE POLICY "staff upload damage photos" ON storage.objects FOR INSERT TO authenticated WITH CHECK (bucket_id = 'damage-photos');
+CREATE POLICY "staff read damage photos" ON storage.objects FOR SELECT TO authenticated USING (bucket_id = 'damage-photos');
+CREATE POLICY "owner deletes damage photos" ON storage.objects FOR DELETE TO authenticated USING (bucket_id = 'damage-photos' AND public.is_owner());

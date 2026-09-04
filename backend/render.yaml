@@ -1,0 +1,38 @@
+# Render blueprint for the SalesPos API.
+#
+# Point Render at this file (New -> Blueprint) and it creates the service with
+# the right build and start commands. DATABASE_URL and CORS_ALLOWED_ORIGINS are
+# left blank on purpose: fill them in the dashboard once Neon and Vercel exist.
+services:
+  - type: web
+    name: salespos-api
+    runtime: python
+    plan: free
+    # The Django project lives in backend/, not the repo root.
+    rootDir: backend
+    buildCommand: "./build.sh"
+    startCommand: "gunicorn config.wsgi:application --bind 0.0.0.0:$PORT --workers 2 --timeout 60"
+    healthCheckPath: /api/auth/me/
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.2"
+      - key: DJANGO_SECRET_KEY
+        generateValue: true
+      - key: DJANGO_DEBUG
+        value: "0"
+      # Render injects the service's own hostname here.
+      - key: DJANGO_ALLOWED_HOSTS
+        fromService:
+          type: web
+          name: salespos-api
+          property: host
+      # Paste the Neon pooled connection string in the dashboard.
+      - key: DATABASE_URL
+        sync: false
+      # Your Vercel URL, e.g. https://salespos.vercel.app
+      - key: CORS_ALLOWED_ORIGINS
+        sync: false
+      - key: JWT_ACCESS_MINUTES
+        value: "60"
+      - key: JWT_REFRESH_DAYS
+        value: "14"

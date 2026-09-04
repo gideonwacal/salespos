@@ -1,0 +1,15 @@
+Django>=5.1,<6.0
+djangorestframework>=3.15
+djangorestframework-simplejwt>=5.3
+psycopg[binary]>=3.2
+django-cors-headers>=4.6
+dj-database-url>=2.3
+python-dotenv>=1.0
+django-filter>=24.3
+
+# Production serving. The dev server is single-threaded and explicitly
+# not for real traffic.
+gunicorn>=23.0
+# Serves admin/DRF static files without a separate web server, which
+# free hosts do not give you.
+whitenoise>=6.8
