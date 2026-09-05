@@ -56,7 +56,7 @@ Keep this string — step 2 needs it.
 
 1. Sign in at **render.com** with GitHub.
 2. **New → Blueprint**, pick your repository. Render reads
-   [`backend/render.yaml`](backend/render.yaml) and proposes a service called
+   [`render.yaml`](render.yaml) and proposes a service called
    `salespos-api`. Approve it.
 3. It will fail its first deploy — expected, two env vars are still blank.
 4. Open the service → **Environment**, and set:

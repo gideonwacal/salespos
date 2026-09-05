@@ -1,5 +1,9 @@
 # Render blueprint for the SalesPos API.
 #
+# Must live at the repository root: Render's Blueprint feature only looks
+# for render.yaml here, never in a subdirectory. `rootDir` below is what
+# points it at the Django project.
+#
 # Point Render at this file (New -> Blueprint) and it creates the service with
 # the right build and start commands. DATABASE_URL and CORS_ALLOWED_ORIGINS are
 # left blank on purpose: fill them in the dashboard once Neon and Vercel exist.
