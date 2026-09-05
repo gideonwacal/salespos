@@ -12,13 +12,23 @@ load_dotenv(BASE_DIR / ".env")
 
 
 def env_list(name: str, default: str = "") -> list[str]:
-    raw = os.environ.get(name, default)
+    # A variable that is *set but empty* must fall back to the default too. An
+    # empty ALLOWED_HOSTS makes Django answer 400 to every request, which is a
+    # miserable thing to debug.
+    raw = os.environ.get(name) or default
     return [item.strip() for item in raw.split(",") if item.strip()]
 
 
 SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "insecure-dev-key-change-me")
 DEBUG = os.environ.get("DJANGO_DEBUG", "1") == "1"
 ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1")
+
+# Render sets this to the service's public hostname. Trusting it directly is
+# more reliable than wiring the hostname through the blueprint, which cannot
+# reference the service being created.
+RENDER_HOST = os.environ.get("RENDER_EXTERNAL_HOSTNAME")
+if RENDER_HOST and RENDER_HOST not in ALLOWED_HOSTS:
+    ALLOWED_HOSTS.append(RENDER_HOST)
 
 INSTALLED_APPS = [
     "django.contrib.admin",
@@ -158,6 +168,10 @@ if not DEBUG:
     # request was HTTPS from this header.
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
     SECURE_SSL_REDIRECT = os.environ.get("DJANGO_SSL_REDIRECT", "1") == "1"
+    # The platform polls the health check internally over plain http. Without
+    # this exemption Django answers 301, the check never sees a 2xx, and the
+    # deploy is marked failed even though the app is fine.
+    SECURE_REDIRECT_EXEMPT = [r"^api/health/$"]
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
     SECURE_CONTENT_TYPE_NOSNIFF = True

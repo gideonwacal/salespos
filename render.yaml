@@ -24,12 +24,10 @@ services:
         generateValue: true
       - key: DJANGO_DEBUG
         value: "0"
-      # Render injects the service's own hostname here.
-      - key: DJANGO_ALLOWED_HOSTS
-        fromService:
-          type: web
-          name: salespos-api
-          property: host
+      # No DJANGO_ALLOWED_HOSTS here on purpose: a blueprint cannot resolve
+      # `fromService` against the service it is creating, so it arrived empty
+      # and Django answered 400 to everything. settings.py reads Render's own
+      # RENDER_EXTERNAL_HOSTNAME instead.
       # Paste the Neon pooled connection string in the dashboard.
       - key: DATABASE_URL
         sync: false
