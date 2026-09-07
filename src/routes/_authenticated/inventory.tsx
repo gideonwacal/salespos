@@ -4,6 +4,7 @@ import { Search, Plus, Download, Upload, PackagePlus, Pencil, Trash2, ImagePlus,
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import { insertRows, updateRow, deleteRow } from "@/lib/db";
+import { DangerZone } from "@/components/DangerZone";
 import { useProducts, daysToExpiry, EXPIRY_WARNING_DAYS, type Product } from "@/lib/data";
 import { ugx, num } from "@/lib/format";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -601,6 +602,9 @@ function Inventory() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Owner only: a cashier who clears the shop by mistake cannot undo it. */}
+      {isOwner && <DangerZone productCount={products.length} />}
 
       <Dialog open={!!stockFor} onOpenChange={(o) => !o && setStockFor(null)}>
         <DialogContent className="max-w-sm">

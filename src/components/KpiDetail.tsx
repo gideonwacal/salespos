@@ -11,6 +11,7 @@ import {
   type Product,
   type Sale,
 } from "@/lib/data";
+import { staffUserId, type StaffRow } from "@/lib/db";
 import { ugx, num, shortDate, paymentLabel } from "@/lib/format";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -47,6 +48,7 @@ export function KpiDetail({
   debts,
   customers,
   products,
+  staff = [],
 }: {
   panel: KpiPanel;
   onClose: () => void;
@@ -55,6 +57,8 @@ export function KpiDetail({
   debts: Debt[];
   customers: Customer[];
   products: Product[];
+  /** Used to put a name against the person who logged each expense. */
+  staff?: StaffRow[];
 }) {
   const title = {
     sales: "Sales breakdown",
@@ -79,7 +83,7 @@ export function KpiDetail({
         </DialogHeader>
 
         <div className="max-h-[60vh] overflow-y-auto">
-          {panel === "expenses" && <ExpenseDetail expenses={expenses} />}
+          {panel === "expenses" && <ExpenseDetail expenses={expenses} staff={staff} />}
           {panel === "sales" && <SalesDetail sales={sales} />}
           {panel === "credit" && <CreditDetail debts={debts} customers={customers} />}
           {panel === "stock" && <StockDetail products={products} />}
@@ -107,8 +111,15 @@ function Empty({ what }: { what: string }) {
   return <p className="py-6 text-center text-sm text-muted-foreground">No {what} yet.</p>;
 }
 
-function ExpenseDetail({ expenses }: { expenses: Expense[] }) {
-  const { byCategory, monthTotal, allTotal } = useMemo(() => {
+function ExpenseDetail({ expenses, staff }: { expenses: Expense[]; staff: StaffRow[] }) {
+  /** Whoever keyed the expense in. Money going out has a person behind it, and
+   * "which of my staff spent this?" is the question the total is hiding. */
+  const nameFor = useMemo(() => {
+    const byId = new Map(staff.map((s) => [staffUserId(s), s.full_name || s.email]));
+    return (id: string | null) => (id ? (byId.get(id) ?? "Removed user") : "Not recorded");
+  }, [staff]);
+
+  const { byCategory, byStaff, monthTotal, allTotal } = useMemo(() => {
     const month = expenses.filter((e) => isThisMonth(e.expense_date));
     const map = new Map<string, { total: number; count: number }>();
     for (const e of month) {
@@ -117,8 +128,22 @@ function ExpenseDetail({ expenses }: { expenses: Expense[] }) {
       row.count += 1;
       map.set(e.category, row);
     }
+
+    // Staff totals run over all time, not just this month: a pattern in who is
+    // spending only shows up over more than four weeks.
+    const people = new Map<string, { total: number; count: number; last: string }>();
+    for (const e of expenses) {
+      const key = e.logged_by ?? "";
+      const row = people.get(key) ?? { total: 0, count: 0, last: "" };
+      row.total += Number(e.amount);
+      row.count += 1;
+      if (String(e.expense_date) > row.last) row.last = String(e.expense_date);
+      people.set(key, row);
+    }
+
     return {
       byCategory: [...map.entries()].sort((a, b) => b[1].total - a[1].total),
+      byStaff: [...people.entries()].sort((a, b) => b[1].total - a[1].total),
       monthTotal: month.reduce((a, e) => a + Number(e.amount), 0),
       allTotal: expenses.reduce((a, e) => a + Number(e.amount), 0),
     };
@@ -174,6 +199,34 @@ function ExpenseDetail({ expenses }: { expenses: Expense[] }) {
 
       <section>
         <h3 className="mb-1 text-xs font-bold uppercase tracking-wide text-muted-foreground">
+          Logged by staff, all time
+        </h3>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Who logged it</TableHead>
+              <TableHead className="text-right">Entries</TableHead>
+              <TableHead className="text-right">Total</TableHead>
+              <TableHead className="text-right">Last entry</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {byStaff.map(([id, row]) => (
+              <TableRow key={id || "unknown"}>
+                <TableCell className="font-medium">{nameFor(id || null)}</TableCell>
+                <TableCell className="text-right">{num(row.count)}</TableCell>
+                <Money>{ugx(row.total)}</Money>
+                <TableCell className="text-right text-muted-foreground">
+                  {row.last ? shortDate(row.last) : "—"}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </section>
+
+      <section>
+        <h3 className="mb-1 text-xs font-bold uppercase tracking-wide text-muted-foreground">
           Most recent
         </h3>
         <Table>
@@ -181,6 +234,7 @@ function ExpenseDetail({ expenses }: { expenses: Expense[] }) {
             <TableRow>
               <TableHead>Date</TableHead>
               <TableHead>Category</TableHead>
+              <TableHead>Logged by</TableHead>
               <TableHead>Paid to</TableHead>
               <TableHead>Status</TableHead>
               <TableHead className="text-right">Amount</TableHead>
@@ -191,6 +245,7 @@ function ExpenseDetail({ expenses }: { expenses: Expense[] }) {
               <TableRow key={e.id}>
                 <TableCell>{shortDate(e.expense_date)}</TableCell>
                 <TableCell className="font-medium">{e.category}</TableCell>
+                <TableCell>{nameFor(e.logged_by)}</TableCell>
                 <TableCell className="text-muted-foreground">{e.vendor ?? "—"}</TableCell>
                 <TableCell>
                   <Badge

@@ -346,3 +346,20 @@ export function checkout(input: {
     body: JSON.stringify(input),
   });
 }
+
+/** What clearing the store actually did, so the UI can report it honestly. */
+export type ClearResult = {
+  mode: "zero" | "delete";
+  zeroed: number;
+  deleted: number;
+  /** Products kept because they appear on a past sale. */
+  kept: number;
+};
+
+/** Empty the shop in one call. Owner only; the server enforces that. */
+export function clearStore(mode: "zero" | "delete") {
+  return request<ClearResult>("/products/clear/", {
+    method: "POST",
+    body: JSON.stringify({ mode }),
+  });
+}

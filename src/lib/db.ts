@@ -29,12 +29,14 @@ import {
 import {
   amendSale,
   checkout,
+  clearStore as clearStoreApi,
   deleteTable,
   hasEndpoint,
   insertTable,
   isLive,
   selectTable,
   updateTable,
+  type ClearResult,
 } from "@/lib/api";
 
 type Row = Record<string, unknown>;
@@ -348,4 +350,51 @@ export async function checkoutSale(input: {
     input.lines.map((l) => ({ ...l, sale_id: sale.id as string })),
   );
   return sale;
+}
+
+/**
+ * Empty the store: the owner's reset button, behind the danger zone.
+ *
+ * "zero" takes every shelf to nothing and keeps the price list; "delete"
+ * removes the items as well. Either way the write-off is filed as an
+ * adjustment per product, so the stock ledger still shows where the quantity
+ * went — a shelf that empties with no movement behind it reads exactly like
+ * theft.
+ *
+ * Products that appear on a past sale are kept whichever mode is chosen:
+ * deleting one would take a line of sales history with it. The count comes
+ * back as `kept` so the owner is told, rather than left wondering why some
+ * items survived.
+ */
+export async function clearStore(mode: "zero" | "delete"): Promise<ClearResult> {
+  if (isServerTable("products")) return clearStoreApi(mode);
+
+  const products = dbSelect<Row>("products");
+  const sold = new Set(dbSelect<Row>("sale_items").map((line) => String(line.product_id)));
+
+  let zeroed = 0;
+  for (const product of products) {
+    const quantity = Number(product.stock_quantity ?? 0);
+    if (!quantity) continue;
+    // dbInsert applies the same side effect the server's service does, so the
+    // product lands on zero without being written twice.
+    dbInsert("stock_transactions", [
+      {
+        product_id: product.id,
+        type: "adjustment",
+        quantity: -quantity,
+        notes: "Store cleared by the owner",
+        expiry_date: null,
+        performed_by: null,
+      },
+    ]);
+    zeroed += 1;
+  }
+
+  if (mode === "zero") return { mode, zeroed, deleted: 0, kept: 0 };
+
+  const removable = products.filter((p) => !sold.has(String(p.id)));
+  for (const product of removable) dbDelete("products", String(product.id));
+
+  return { mode, zeroed, deleted: removable.length, kept: products.length - removable.length };
 }

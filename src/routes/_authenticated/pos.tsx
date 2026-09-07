@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Search,
   Plus,
@@ -109,6 +109,35 @@ function POS() {
   const [busy, setBusy] = useState(false);
   const [receipt, setReceipt] = useState<Receipt | null>(null);
   const [registering, setRegistering] = useState(false);
+
+  // The owner can empty or delete stock from the office while a basket is open
+  // here. The product list polls, so react to it: drop what no longer exists
+  // and re-read prices and stock on what does, rather than letting the cashier
+  // ring up a shelf that is gone.
+  useEffect(() => {
+    if (!products.length && !cart.length) return;
+    setCart((prev) => {
+      const next = prev
+        .map((line) => {
+          const fresh = products.find((p) => p.id === line.product.id);
+          return fresh ? { ...line, product: fresh } : null;
+        })
+        .filter((line): line is CartLine => line !== null);
+
+      if (next.length === prev.length) {
+        // Same items: only replace the array if a price or count actually moved,
+        // so this does not re-render the till on every poll.
+        const changed = next.some((line, i) => line.product !== prev[i].product);
+        return changed ? next : prev;
+      }
+
+      toast.warning(
+        `${prev.length - next.length} item(s) were removed from the store and have left this sale`,
+      );
+      setOverride(null);
+      return next;
+    });
+  }, [products, cart.length]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();

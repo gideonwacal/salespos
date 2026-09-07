@@ -159,12 +159,25 @@ export function outstanding(d: Debt) {
   return Math.max(0, Number(d.total_value) - Number(d.amount_paid));
 }
 
-type Opts = { orderBy?: string; ascending?: boolean; limit?: number };
+type Opts = {
+  orderBy?: string;
+  ascending?: boolean;
+  limit?: number;
+  /**
+   * Poll for changes made elsewhere. The counter and the office are two
+   * browsers looking at one shop: when the owner clears the store or takes a
+   * delivery, the cashier must not keep selling off a stale list.
+   */
+  refreshMs?: number;
+};
 
 function useTable<T>(key: string, table: string, opts: Opts = {}) {
-  const { orderBy, ascending = false, limit } = opts;
+  const { orderBy, ascending = false, limit, refreshMs } = opts;
   return useQuery({
     queryKey: [key],
+    refetchInterval: refreshMs,
+    // Coming back to the tab is the other moment the list could be stale.
+    refetchOnWindowFocus: true,
     queryFn: async (): Promise<T[]> => {
       // selectRows routes to Django or the local store per table; sorting stays
       // here so both backends return rows in the same order.
@@ -182,7 +195,13 @@ function useTable<T>(key: string, table: string, opts: Opts = {}) {
 }
 
 export function useProducts() {
-  return useTable<Product>("products", "products", { orderBy: "name", ascending: true });
+  return useTable<Product>("products", "products", {
+    orderBy: "name",
+    ascending: true,
+    // Stock is the one list two people change at once — the owner in the
+    // office, the cashier at the till.
+    refreshMs: 45_000,
+  });
 }
 
 export function useDamageReports() {

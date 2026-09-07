@@ -7,10 +7,11 @@
  * this opens the same ledger as a chart with a date range and a product search
  * behind it.
  *
- * Each bucket carries a pair of bars, stock in beside stock out, so a month
- * where the shelf emptied looks different at a glance from one where it
+ * The bars are drawn as lorries — a truck graph. Each bucket carries a pair,
+ * stock in beside stock out, and the trucks face the way the goods went, so a
+ * month where the shelf emptied looks different at a glance from one where it
  * filled. Buckets switch from days to months once the range is longer than
- * about two months, because 200 daily bars is a smear, not a chart.
+ * about two months, because 200 daily trucks is a smear, not a chart.
  */
 
 import { useMemo, useState } from "react";
@@ -24,7 +25,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { ArrowDownUp, Boxes, PackageSearch, Search } from "lucide-react";
+import { ArrowDownUp, Boxes, PackageSearch, Search, Truck as Truck2 } from "lucide-react";
 import { type Product, type StockTxn } from "@/lib/data";
 import { num, shortDate, ugx } from "@/lib/format";
 import { Button } from "@/components/ui/button";
@@ -247,6 +248,10 @@ export function StockMovementsDialog({
           <Tile label="Stock value" value={ugx(totals.value)} />
         </div>
 
+        <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+          <Truck2 className="size-3.5" /> Truck graph — what came in and what went out
+        </p>
+
         <div className="h-64">
           {chart.length === 0 ? (
             <div className="flex h-full items-center justify-center rounded-lg border border-dashed border-border text-sm text-muted-foreground">
@@ -264,13 +269,13 @@ export function StockMovementsDialog({
                   dataKey="in"
                   name="Stock in"
                   fill="hsl(var(--chart-2, 150 60% 40%))"
-                  radius={[6, 6, 0, 0]}
+                  shape={<Truck facing="right" />}
                 />
                 <Bar
                   dataKey="out"
                   name="Stock out"
                   fill="hsl(var(--chart-1, 220 70% 50%))"
-                  radius={[6, 6, 0, 0]}
+                  shape={<Truck facing="left" />}
                 />
               </BarChart>
             </ResponsiveContainer>
@@ -393,6 +398,100 @@ export function StockMovementsDialog({
       </DialogContent>
     </Dialog>
   );
+}
+
+/**
+ * A bar drawn as a lorry: the taller the load, the bigger the truck.
+ *
+ * The chart is about goods arriving and leaving, and a shopkeeper reads a truck
+ * faster than a rectangle. Inbound trucks face right, into the shop; outbound
+ * face left, away from it, so which direction the stock went is legible before
+ * the legend is read.
+ *
+ * Recharts clones this element with the computed bar geometry, so `facing` is
+ * ours and everything else arrives from the chart.
+ */
+function Truck(props: {
+  facing?: "left" | "right";
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
+  fill?: string;
+}) {
+  const { facing = "right", x = 0, y = 0, width = 0, height = 0, fill } = props;
+  if (height <= 0 || width <= 0) return null;
+
+  const ground = y + height;
+  const wheelR = Math.max(2.5, Math.min(6, width * 0.1));
+  const chassis = ground - wheelR * 1.5;
+
+  // Below this there is no room for a cab and wheels; a plain crate reads
+  // better than a squashed lorry.
+  if (chassis - y < wheelR * 2) {
+    return <rect x={x} y={y} width={width} height={Math.max(1, height)} rx={2} fill={fill} />;
+  }
+
+  const cabWidth = Math.min(width * 0.34, 26);
+  const cargoWidth = width - cabWidth - 1;
+  // A cab is roughly as tall as it is wide. Sizing it off the bar's height
+  // instead gives a tall thin sliver on a big month, which reads as a mistake.
+  const cabHeight = Math.min(chassis - y, Math.max(8, cabWidth * 1.5));
+  const cabTop = chassis - cabHeight;
+  const cabX = x + cargoWidth + 1;
+  const slant = Math.min(cabWidth * 0.45, cabHeight * 0.5);
+
+  const body = (
+    <g>
+      {/* cargo box */}
+      <rect x={x} y={y} width={cargoWidth} height={chassis - y} rx={2} fill={fill} />
+      {/* the ribs of a container, so it does not read as a plain bar */}
+      {cargoWidth > 14 && chassis - y > 14 && (
+        <g stroke="hsl(var(--background))" strokeOpacity={0.45} strokeWidth={1}>
+          <line x1={x + cargoWidth / 3} y1={y + 3} x2={x + cargoWidth / 3} y2={chassis - 3} />
+          <line
+            x1={x + (cargoWidth * 2) / 3}
+            y1={y + 3}
+            x2={x + (cargoWidth * 2) / 3}
+            y2={chassis - 3}
+          />
+        </g>
+      )}
+      {/* cab, with the windscreen raked forward */}
+      <path
+        d={`M ${cabX} ${cabTop}
+            L ${cabX + cabWidth - slant} ${cabTop}
+            L ${cabX + cabWidth} ${cabTop + slant}
+            L ${cabX + cabWidth} ${chassis}
+            L ${cabX} ${chassis} Z`}
+        fill={fill}
+        fillOpacity={0.75}
+      />
+      {cabWidth > 8 && cabHeight > 9 && (
+        <path
+          d={`M ${cabX + 3} ${cabTop + 3}
+              L ${cabX + cabWidth - slant - 1} ${cabTop + 3}
+              L ${cabX + cabWidth - 3} ${cabTop + slant + 1}
+              L ${cabX + 3} ${cabTop + slant + 1} Z`}
+          fill="hsl(var(--background))"
+          fillOpacity={0.65}
+        />
+      )}
+      {/* wheels */}
+      <g fill="hsl(var(--foreground))" fillOpacity={0.6}>
+        <circle cx={x + cargoWidth * 0.25} cy={ground - wheelR} r={wheelR} />
+        <circle cx={x + cargoWidth * 0.68} cy={ground - wheelR} r={wheelR} />
+        <circle cx={cabX + cabWidth * 0.6} cy={ground - wheelR} r={wheelR} />
+      </g>
+    </g>
+  );
+
+  // Outbound: the same lorry, turned around about its own centre.
+  if (facing === "left") {
+    const centre = x + width / 2;
+    return <g transform={`translate(${2 * centre}, 0) scale(-1, 1)`}>{body}</g>;
+  }
+  return body;
 }
 
 function Quick({ label, onClick }: { label: string; onClick: () => void }) {

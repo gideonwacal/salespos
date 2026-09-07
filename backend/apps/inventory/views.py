@@ -1,4 +1,7 @@
+from django.db.models import ProtectedError
+from rest_framework import status
 from rest_framework.decorators import action
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.response import Response
 
 from apps.core.tenancy import WorkspaceViewSet
@@ -8,7 +11,12 @@ from apps.inventory.serializers import (
     ProductSerializer,
     StockTransactionSerializer,
 )
-from apps.inventory.services import low_stock_products, record_damage, record_stock_transaction
+from apps.inventory.services import (
+    clear_store,
+    low_stock_products,
+    record_damage,
+    record_stock_transaction,
+)
 
 
 class ProductViewSet(WorkspaceViewSet):
@@ -22,6 +30,44 @@ class ProductViewSet(WorkspaceViewSet):
     def low_stock(self, request):
         rows = low_stock_products(request.workspace).order_by("name")
         return Response(self.get_serializer(rows, many=True).data)
+
+    def perform_destroy(self, instance):
+        """Refuse to take a sale's history with the product.
+
+        SaleItem protects the product, so this would otherwise surface as a 500
+        and the owner would be told nothing. Zeroing is the honest alternative,
+        and it is what the danger zone does in bulk.
+        """
+        try:
+            instance.delete()
+        except ProtectedError:
+            raise ValidationError(
+                f"{instance.name} appears on past sales, so deleting it would erase them. "
+                "Set its stock to zero instead."
+            )
+
+    @action(detail=False, methods=["post"], url_path="clear")
+    def clear(self, request):
+        """Empty the whole store. Owner only, and irreversible.
+
+        A POST rather than a DELETE, so `OwnerOnlyDelete` does not cover it —
+        the role is checked here instead. It is a single call on purpose: a
+        thousand products cleared one request at a time can half-finish, and a
+        half-cleared shop is worse than either end of the operation.
+        """
+        if getattr(request, "workspace_role", None) != "owner":
+            raise PermissionDenied("Only the workspace owner can clear the store.")
+
+        mode = str(request.data.get("mode", "")).strip()
+        if mode not in ("zero", "delete"):
+            return Response(
+                {"mode": "Choose 'zero' to empty the shelves or 'delete' to remove the items."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        return Response(
+            clear_store(workspace=request.workspace, mode=mode, performed_by=request.user)
+        )
 
 
 class StockTransactionViewSet(WorkspaceViewSet):

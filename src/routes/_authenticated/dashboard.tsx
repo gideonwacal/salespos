@@ -28,6 +28,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { KpiDetail, type KpiPanel } from "@/components/KpiDetail";
 import { StockMovementsDialog } from "@/components/StockMovementsDialog";
+import { type StaffRow } from "@/lib/db";
 import { Badge } from "@/components/ui/badge";
 import {
   Table,
@@ -206,6 +207,7 @@ function Dashboard() {
         debts={debts}
         customers={customers}
         products={products}
+        staff={staff as unknown as StaffRow[]}
       />
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
