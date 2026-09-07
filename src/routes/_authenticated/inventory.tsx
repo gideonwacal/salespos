@@ -150,9 +150,18 @@ function Inventory() {
 
   const remove = async (p: Product) => {
     if (!window.confirm(`Delete "${p.name}"? This cannot be undone.`)) return;
-    await deleteRow("products", p.id);
-    toast.success("Item removed");
-    queryClient.invalidateQueries({ queryKey: ["products"] });
+    try {
+      await deleteRow("products", p.id);
+      toast.success("Item removed");
+      queryClient.invalidateQueries({ queryKey: ["products"] });
+    } catch (err) {
+      // Without this the row simply stayed put and said nothing — the server
+      // refuses a delete for two good reasons (the item is on a past sale, or
+      // the person is not the owner) and neither ever reached the screen.
+      toast.error(err instanceof Error ? err.message : "Could not delete that item", {
+        description: `${p.name} is still in the store. Set its stock to zero if it cannot be removed.`,
+      });
+    }
   };
 
   const receiveStock = async () => {
