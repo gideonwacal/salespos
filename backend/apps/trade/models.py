@@ -20,6 +20,19 @@ class Customer(WorkspaceScoped):
     name = models.CharField(max_length=200)
     phone = models.CharField(max_length=40, blank=True, default="")
     notes = models.TextField(blank=True, default="")
+
+    # Know-your-customer details. A credit sale is an unsecured loan made at a
+    # counter, so the shop needs enough to find the person again: the national
+    # ID, a second number, where they trade and where they sleep.
+    nin = models.CharField("National ID (NIN)", max_length=32, blank=True, default="")
+    alt_phone = models.CharField(max_length=40, blank=True, default="")
+    location = models.CharField(max_length=200, blank=True, default="")
+    residence = models.CharField(max_length=200, blank=True, default="")
+    occupation = models.CharField(max_length=120, blank=True, default="")
+    guarantor_name = models.CharField(max_length=200, blank=True, default="")
+    guarantor_phone = models.CharField(max_length=40, blank=True, default="")
+    # 0 means "no ceiling set"; the UI warns rather than blocks.
+    credit_limit = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     # Denormalised running total of empties held by the customer. Kept in step
     # by the bottle-movement service so the debtors page needs one query.
     bottles_owed = models.IntegerField(default=0)

@@ -27,6 +27,7 @@ import {
 } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { KpiDetail, type KpiPanel } from "@/components/KpiDetail";
+import { StockMovementsDialog } from "@/components/StockMovementsDialog";
 import { Badge } from "@/components/ui/badge";
 import {
   Table,
@@ -86,6 +87,9 @@ function Dashboard() {
   // Which headline the owner has opened up. A figure alone says something
   // moved; the rows behind it say what.
   const [panel, setPanel] = useState<KpiPanel>(null);
+  // The movements tile is a teaser for the ledger behind it; tapping opens the
+  // period search and the chart.
+  const [stockOpen, setStockOpen] = useState(false);
   const { data: suppliers = [] } = useSuppliers();
   const { data: purchases = [] } = usePurchases();
 
@@ -384,10 +388,24 @@ function Dashboard() {
           </CardContent>
         </Card>
 
-        <Card className="glass-card">
+        <Card
+          role="button"
+          tabIndex={0}
+          onClick={() => setStockOpen(true)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              setStockOpen(true);
+            }
+          }}
+          className="glass-card cursor-pointer transition-shadow hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
               <FileText className="size-4" /> Latest stock movements
+              <span className="ml-auto text-[11px] font-normal text-muted-foreground">
+                Tap for the chart
+              </span>
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2 text-sm">
@@ -408,6 +426,13 @@ function Dashboard() {
           </CardContent>
         </Card>
       </div>
+
+      <StockMovementsDialog
+        open={stockOpen}
+        onClose={() => setStockOpen(false)}
+        movements={movements}
+        products={products}
+      />
     </div>
   );
 }

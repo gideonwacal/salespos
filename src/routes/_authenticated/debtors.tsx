@@ -12,13 +12,15 @@ import {
   type Debt,
 } from "@/lib/data";
 import { insertRows } from "@/lib/db";
+import { useAuth } from "@/hooks/useAuth";
+import { CustomerDialog } from "@/components/CustomerDialog";
+import { DebtorOverview } from "@/components/DebtorOverview";
 import { ugx, num, shortDate, DEBT_STATUS, PAYMENT_METHODS } from "@/lib/format";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -65,6 +67,7 @@ export const Route = createFileRoute("/_authenticated/debtors")({
 
 function DebtorsPage() {
   const queryClient = useQueryClient();
+  const { isOwner } = useAuth();
   const { data: customers = [] } = useCustomers();
   const { data: debts = [] } = useDebts();
   const { data: movements = [] } = useBottleMovements();
@@ -93,7 +96,13 @@ function DebtorsPage() {
           </p>
         </div>
         <div className="flex gap-2">
-          <NewCustomerDialog />
+          <CustomerDialog
+            trigger={
+              <Button variant="outline">
+                <UserPlus className="size-4" /> New customer
+              </Button>
+            }
+          />
           <NewDebtDialog />
         </div>
       </div>
@@ -122,6 +131,9 @@ function DebtorsPage() {
       <Tabs defaultValue="debts">
         <TabsList>
           <TabsTrigger value="debts">Debtor ledger</TabsTrigger>
+          {/* Who owes, not just what is owed — and it carries national IDs, so
+              it is the owner's view rather than the counter's. */}
+          {isOwner && <TabsTrigger value="overview">Debtor overview</TabsTrigger>}
           <TabsTrigger value="bottles">Bottle returns</TabsTrigger>
         </TabsList>
 
@@ -187,6 +199,12 @@ function DebtorsPage() {
             </CardContent>
           </Card>
         </TabsContent>
+
+        {isOwner && (
+          <TabsContent value="overview" className="pt-4">
+            <DebtorOverview customers={customers} debts={debts} />
+          </TabsContent>
+        )}
 
         <TabsContent value="bottles" className="space-y-4 pt-4">
           <div className="grid gap-3 md:grid-cols-2">
@@ -267,67 +285,6 @@ function Stat({ label, value, tone }: { label: string; value: string; tone: stri
         </p>
       </CardContent>
     </Card>
-  );
-}
-
-function NewCustomerDialog() {
-  const queryClient = useQueryClient();
-  const [open, setOpen] = useState(false);
-  const [name, setName] = useState("");
-  const [phone, setPhone] = useState("");
-  const [notes, setNotes] = useState("");
-
-  const save = async () => {
-    if (!name.trim()) return toast.error("Customer name is required");
-    try {
-      await insertRows("customers", {
-        name: name.trim(),
-        phone: phone.trim() || null,
-        notes: notes.trim() || null,
-        bottles_owed: 0,
-      });
-      toast.success("Customer added");
-      setOpen(false);
-      setName("");
-      setPhone("");
-      setNotes("");
-      queryClient.invalidateQueries();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Could not save customer");
-    }
-  };
-
-  return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button variant="outline">
-          <UserPlus className="size-4" /> New customer
-        </Button>
-      </DialogTrigger>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Add customer</DialogTitle>
-          <DialogDescription>Saved customers can buy on credit and hold empties.</DialogDescription>
-        </DialogHeader>
-        <div className="space-y-3">
-          <div className="space-y-1.5">
-            <Label>Name</Label>
-            <Input value={name} onChange={(e) => setName(e.target.value)} maxLength={100} />
-          </div>
-          <div className="space-y-1.5">
-            <Label>Contact</Label>
-            <Input value={phone} onChange={(e) => setPhone(e.target.value)} maxLength={40} />
-          </div>
-          <div className="space-y-1.5">
-            <Label>Notes</Label>
-            <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} maxLength={300} />
-          </div>
-          <Button className="w-full" onClick={save}>
-            Save customer
-          </Button>
-        </div>
-      </DialogContent>
-    </Dialog>
   );
 }
 

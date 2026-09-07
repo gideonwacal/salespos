@@ -45,6 +45,17 @@ class BlankableCharField(serializers.CharField):
 class CustomerSerializer(serializers.ModelSerializer):
     phone = BlankableCharField(max_length=40)
     notes = BlankableCharField()
+    # The KYC block the counter fills in for a credit customer. Every one of
+    # them is optional at this layer: a shop that only sells for cash should
+    # not be forced to collect a national ID, so the requirement lives in the
+    # credit form on the frontend, not here.
+    nin = BlankableCharField(max_length=32)
+    alt_phone = BlankableCharField(max_length=40)
+    location = BlankableCharField(max_length=200)
+    residence = BlankableCharField(max_length=200)
+    occupation = BlankableCharField(max_length=120)
+    guarantor_name = BlankableCharField(max_length=200)
+    guarantor_phone = BlankableCharField(max_length=40)
 
     class Meta:
         model = Customer
@@ -53,12 +64,39 @@ class CustomerSerializer(serializers.ModelSerializer):
             "name",
             "phone",
             "notes",
+            "nin",
+            "alt_phone",
+            "location",
+            "residence",
+            "occupation",
+            "guarantor_name",
+            "guarantor_phone",
+            "credit_limit",
             "bottles_owed",
             "created_at",
             "updated_at",
         ]
         # The running total is derived from bottle movements, never posted.
         read_only_fields = ["id", "created_at", "updated_at", "bottles_owed"]
+
+    def validate_nin(self, value):
+        """Reject a NIN that is already on another customer in this workspace.
+
+        Two rows for one person is how a debtor ends up with two half-paid
+        balances and neither looks overdue.
+        """
+        value = (value or "").strip().upper()
+        if not value:
+            return value
+        workspace = self.context["request"].workspace
+        clash = Customer.objects.filter(workspace=workspace, nin__iexact=value)
+        if self.instance is not None:
+            clash = clash.exclude(pk=self.instance.pk)
+        if clash.exists():
+            raise serializers.ValidationError(
+                f"{clash.first().name} is already registered with this National ID."
+            )
+        return value
 
 
 class DebtSerializer(serializers.ModelSerializer):

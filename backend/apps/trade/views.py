@@ -39,7 +39,9 @@ from apps.trade.serializers import (
 class CustomerViewSet(WorkspaceViewSet):
     queryset = Customer.objects.all()
     serializer_class = CustomerSerializer
-    search_fields = ["name", "phone"]
+    # The counter looks a debtor up by whatever it has to hand — a name, the
+    # number that called, or the national ID on the form.
+    search_fields = ["name", "phone", "alt_phone", "nin", "location", "residence"]
     ordering_fields = ["name", "created_at", "bottles_owed"]
 
 

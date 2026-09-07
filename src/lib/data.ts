@@ -88,6 +88,17 @@ export type Customer = {
   bottles_owed: number;
   created_at: string;
   updated_at: string;
+  /* Know-your-customer details, captured when someone is put on credit.
+     Optional throughout: a cash-only shop never fills them in, and rows
+     created before this existed have none. */
+  nin?: string | null;
+  alt_phone?: string | null;
+  location?: string | null;
+  residence?: string | null;
+  occupation?: string | null;
+  guarantor_name?: string | null;
+  guarantor_phone?: string | null;
+  credit_limit?: number | null;
 };
 
 export type DebtStatus = "pending" | "partially_paid" | "overdue" | "cleared";
@@ -190,9 +201,11 @@ export function useExpenses() {
 }
 
 export function useStockTransactions() {
+  // Deep enough for a year of the movement chart and the period export; the
+  // dashboard tile still only draws the first handful.
   return useTable<StockTxn>("stock_transactions", "stock_transactions", {
     orderBy: "created_at",
-    limit: 200,
+    limit: 2000,
   });
 }
 

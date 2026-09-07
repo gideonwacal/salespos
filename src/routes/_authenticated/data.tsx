@@ -2,7 +2,14 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Download, FileSpreadsheet, Upload, CircleAlert, CircleCheck } from "lucide-react";
+import {
+  Download,
+  FileSpreadsheet,
+  Upload,
+  CircleAlert,
+  CircleCheck,
+  CalendarRange,
+} from "lucide-react";
 import { insertRows, selectRows, addStaff } from "@/lib/db";
 import { datasetsFor, EXPORT_ONLY } from "@/lib/datasets";
 import {
@@ -14,6 +21,7 @@ import {
   stamp,
   templateCsv,
   toCsv,
+  withinPeriod,
   type RowResult,
   type TransferSchema,
 } from "@/lib/transfer";
@@ -22,6 +30,8 @@ import { useAuth } from "@/hooks/useAuth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/_authenticated/data")({
@@ -38,6 +48,27 @@ export const Route = createFileRoute("/_authenticated/data")({
   component: DataTransfer,
 });
 
+const iso = (d: Date) => d.toISOString().slice(0, 10);
+const today = iso(new Date());
+const monthStart = today.slice(0, 8) + "01";
+
+/** Shift a month-start by `offset` months and return [first day, last day]. */
+function monthRange(offset: number): [string, string] {
+  const first = new Date();
+  first.setDate(1);
+  first.setMonth(first.getMonth() + offset);
+  const last = new Date(first);
+  last.setMonth(last.getMonth() + 1);
+  last.setDate(0);
+  return [iso(first), iso(last)];
+}
+
+/** Datasets with a period say so in the filename; the rest keep the date stamp. */
+function exportName(schema: TransferSchema, from: string, to: string) {
+  if (!schema.dateKey || (!from && !to)) return stamp(schema.id);
+  return `${schema.id}-${from || "start"}_to_${to || "today"}.csv`;
+}
+
 type Stage =
   | { step: "idle" }
   | { step: "checking" }
@@ -52,6 +83,10 @@ function DataTransfer() {
 
   const [active, setActive] = useState<TransferSchema>(datasets[0]);
   const [stage, setStage] = useState<Stage>({ step: "idle" });
+  // The period an export is trimmed to. Defaults to the month so far, because
+  // "this month's stock" is what gets asked for; blank both to take everything.
+  const [from, setFrom] = useState(monthStart);
+  const [to, setTo] = useState(today);
   const fileInput = useRef<HTMLInputElement>(null);
 
   const importable = !EXPORT_ONLY.has(active.id);
@@ -67,13 +102,34 @@ function DataTransfer() {
 
   const exportRows = async () => {
     try {
-      const rows = await selectRows<Record<string, unknown>>(active.table);
+      let rows = await selectRows<Record<string, unknown>>(active.table);
       if (!rows.length) {
         toast.error(`There is nothing in ${active.label} to export yet`);
         return;
       }
-      download(stamp(active.id), toCsv(active, rows));
-      toast.success(`${rows.length} ${active.label.toLowerCase()} exported`);
+
+      // A stock ledger stores product ids; the owner needs names, categories
+      // and what each movement was worth, so join those in before writing.
+      if (active.decorate) {
+        const [products, customers] = await Promise.all([
+          selectRows<Record<string, unknown>>("products"),
+          selectRows<Record<string, unknown>>("customers"),
+        ]);
+        rows = active.decorate(rows, { products, customers });
+      }
+
+      const dated = active.dateKey ? withinPeriod(active, rows, from, to) : rows;
+      if (!dated.length) {
+        toast.error("Nothing in that period — widen the dates and try again");
+        return;
+      }
+
+      download(exportName(active, from, to), toCsv(active, dated));
+      toast.success(
+        active.dateKey
+          ? `${dated.length} ${active.label.toLowerCase()} exported for ${from || "the start"} to ${to || "today"}`
+          : `${dated.length} ${active.label.toLowerCase()} exported`,
+      );
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not export");
     }
@@ -210,6 +266,83 @@ function DataTransfer() {
             </CardHeader>
             <CardContent className="space-y-4">
               <p className="text-sm text-muted-foreground">{active.description}</p>
+
+              {active.dateKey && (
+                <div className="space-y-2 rounded-lg border border-border p-3">
+                  <p className="flex items-center gap-2 text-xs font-semibold">
+                    <CalendarRange className="size-3.5" /> Period to export
+                  </p>
+                  <div className="flex flex-wrap items-end gap-3">
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">From</Label>
+                      <Input
+                        type="date"
+                        className="h-9 w-[150px]"
+                        value={from}
+                        max={to || undefined}
+                        onChange={(e) => setFrom(e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">To</Label>
+                      <Input
+                        type="date"
+                        className="h-9 w-[150px]"
+                        value={to}
+                        min={from || undefined}
+                        onChange={(e) => setTo(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 text-xs"
+                      onClick={() => {
+                        setFrom(monthStart);
+                        setTo(today);
+                      }}
+                    >
+                      This month
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 text-xs"
+                      onClick={() => {
+                        const [start, end] = monthRange(-1);
+                        setFrom(start);
+                        setTo(end);
+                      }}
+                    >
+                      Last month
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 text-xs"
+                      onClick={() => {
+                        setFrom(`${new Date().getFullYear()}-01-01`);
+                        setTo(today);
+                      }}
+                    >
+                      This year
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 text-xs"
+                      onClick={() => {
+                        setFrom("");
+                        setTo("");
+                      }}
+                    >
+                      Everything
+                    </Button>
+                  </div>
+                </div>
+              )}
 
               <div className="flex flex-wrap gap-2">
                 <Button variant="outline" onClick={exportRows}>

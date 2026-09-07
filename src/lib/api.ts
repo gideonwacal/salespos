@@ -247,15 +247,37 @@ export function hasEndpoint(table: string) {
   return table in ENDPOINTS;
 }
 
-type Paginated<T> = { results?: T[]; count?: number };
+type Paginated<T> = { results?: T[]; count?: number; next?: string | null };
+
+/** The server's ceiling on ?limit — asking for more is silently capped. */
+const MAX_PAGE = 1000;
+/** Stop after this many rows rather than pulling a whole year into a browser. */
+const MAX_ROWS = 20000;
 
 export async function selectTable<T>(table: string, limit?: number): Promise<T[]> {
   const endpoint = ENDPOINTS[table];
   if (!endpoint) return [];
-  const query = limit ? `?limit=${limit}` : "";
-  const data = await request<Paginated<T> | T[]>(`/${endpoint}/${query}`);
-  if (Array.isArray(data)) return data;
-  return data.results ?? [];
+
+  // An explicit limit is the caller saying "the first N will do".
+  if (limit) {
+    const data = await request<Paginated<T> | T[]>(
+      `/${endpoint}/?limit=${Math.min(limit, MAX_PAGE)}`,
+    );
+    return Array.isArray(data) ? data : (data.results ?? []);
+  }
+
+  // No limit means the caller wants the list, not its first page. DRF paginates
+  // at 200 by default, so without this a year's stock ledger exported as one
+  // truncated month and said nothing about it.
+  const rows: T[] = [];
+  for (let page = 1; rows.length < MAX_ROWS; page += 1) {
+    const data = await request<Paginated<T> | T[]>(`/${endpoint}/?limit=${MAX_PAGE}&page=${page}`);
+    if (Array.isArray(data)) return data;
+    const batch = data.results ?? [];
+    rows.push(...batch);
+    if (!data.next || batch.length === 0) break;
+  }
+  return rows;
 }
 
 export async function insertTable<T extends Record<string, unknown>>(

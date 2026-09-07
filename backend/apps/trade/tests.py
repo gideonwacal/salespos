@@ -40,6 +40,66 @@ class TradeApiTests(TestCase):
             due_date=timezone.localdate() + timedelta(days=due_in_days),
         )
 
+    # --- know-your-customer --------------------------------------------------
+
+    def test_credit_customer_stores_kyc_details(self):
+        response = self.client.post(
+            "/api/customers/",
+            {
+                "name": "Bright Retail Shop",
+                "phone": "0771 234 567",
+                "nin": "cm90031104hgke",
+                "location": "Nakawa Market, stall 14",
+                "residence": "Kireka, Kamuli Road",
+                "guarantor_name": "Sarah Nabbosa",
+                "credit_limit": "2000000",
+            },
+            format="json",
+            **self.headers,
+        )
+        self.assertEqual(response.status_code, 201, response.data)
+        # Stored upper-cased, so a search matches however it was typed in.
+        self.assertEqual(response.data["nin"], "CM90031104HGKE")
+        self.assertEqual(response.data["residence"], "Kireka, Kamuli Road")
+
+        saved = Customer.objects.get(pk=response.data["id"])
+        self.assertEqual(saved.credit_limit, Decimal("2000000.00"))
+
+    def test_a_national_id_cannot_be_registered_twice(self):
+        self.customer.nin = "CM90031104HGKE"
+        self.customer.save()
+
+        response = self.client.post(
+            "/api/customers/",
+            {"name": "Same person, second row", "nin": "cm90031104hgke"},
+            format="json",
+            **self.headers,
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("Nakawa Retail", str(response.data["nin"]))
+
+    def test_a_blank_national_id_is_allowed_more_than_once(self):
+        """A cash customer never hands over an ID; that must not collide."""
+        for name in ("Walk-in A", "Walk-in B"):
+            response = self.client.post(
+                "/api/customers/",
+                {"name": name, "nin": ""},
+                format="json",
+                **self.headers,
+            )
+            self.assertEqual(response.status_code, 201, response.data)
+
+    def test_debtors_can_be_searched_by_national_id(self):
+        self.customer.nin = "CM90031104HGKE"
+        self.customer.save()
+        response = self.client.get(
+            "/api/customers/?search=CM90031104", **self.headers
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            [row["name"] for row in response.data["results"]], ["Nakawa Retail"]
+        )
+
     # --- credit and payments -------------------------------------------------
 
     def test_payment_updates_balance_and_status(self):

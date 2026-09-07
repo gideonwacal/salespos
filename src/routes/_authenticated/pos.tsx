@@ -9,6 +9,8 @@ import {
   ShoppingCart,
   AlertTriangle,
   Recycle,
+  UserPlus,
+  IdCard,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
@@ -31,6 +33,7 @@ import {
 } from "@/lib/format";
 import { useAuth } from "@/hooks/useAuth";
 import { useBusiness } from "@/hooks/useBusiness";
+import { CustomerDialog } from "@/components/CustomerDialog";
 import { PosCalculator } from "@/components/PosCalculator";
 import { RecentSales } from "@/components/RecentSales";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -105,6 +108,7 @@ function POS() {
   const [override, setOverride] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [receipt, setReceipt] = useState<Receipt | null>(null);
+  const [registering, setRegistering] = useState(false);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -437,9 +441,54 @@ function POS() {
           </div>
 
           {isCredit && (
-            <div className="space-y-1.5">
-              <Label>Payment due date</Label>
-              <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+            <div className="space-y-2.5 rounded-lg border border-warning/40 bg-warning-soft/40 p-3">
+              <p className="flex items-center gap-2 text-xs font-semibold">
+                <IdCard className="size-3.5" /> Credit sale — the customer must be on file
+              </p>
+
+              {/* Credit leaves the shop with a person, not a name on a receipt.
+                  Registering here means the cashier collects the details while
+                  the customer is still standing at the counter. */}
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full"
+                onClick={() => setRegistering(true)}
+              >
+                <UserPlus className="size-4" /> Register a new credit customer
+              </Button>
+
+              {customer ? (
+                <div className="space-y-0.5 text-[11px] text-muted-foreground">
+                  <p>
+                    NIN:{" "}
+                    <span className={cn("font-semibold", !customer.nin && "text-warning-foreground")}>
+                      {customer.nin || "not on file"}
+                    </span>
+                  </p>
+                  <p>Resides: {customer.residence || "not recorded"}</p>
+                  {Number(customer.credit_limit) > 0 && (
+                    <p
+                      className={cn(
+                        customerDebt + total > Number(customer.credit_limit) &&
+                          "font-semibold text-destructive",
+                      )}
+                    >
+                      Credit limit {ugx(Number(customer.credit_limit))} · this sale takes them to{" "}
+                      {ugx(customerDebt + total)}
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <p className="text-[11px] text-muted-foreground">
+                  Pick the customer above, or register them, before recording this sale.
+                </p>
+              )}
+
+              <div className="space-y-1.5">
+                <Label>Payment due date</Label>
+                <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+              </div>
             </div>
           )}
 
@@ -510,6 +559,18 @@ function POS() {
           if (!cart.length) return toast.error("Add items before applying a total");
           setOverride(Math.max(0, roundToCurrency(value)));
           toast.success("Total applied to checkout");
+        }}
+      />
+
+      <CustomerDialog
+        kyc
+        open={registering}
+        onOpenChange={setRegistering}
+        // Straight onto the sale being rung up, so the cashier never has to
+        // find the person they just typed in.
+        onSaved={(id) => {
+          setCustomerId(id);
+          setBottlesReturned("");
         }}
       />
 

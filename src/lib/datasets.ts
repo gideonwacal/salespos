@@ -9,7 +9,7 @@
  * industry profile — a pharmacy imports batch numbers, hardware imports units.
  */
 
-import type { TransferSchema } from "@/lib/transfer";
+import type { ExportContext, TransferSchema } from "@/lib/transfer";
 import { hasFeature, type IndustryProfile } from "@/lib/industry";
 
 const CUSTOMERS: TransferSchema = {
@@ -35,6 +35,63 @@ const CUSTOMERS: TransferSchema = {
       kind: "text",
       aliases: ["telephone", "tel", "mobile", "contact"],
       example: "0772-334455",
+    },
+    {
+      key: "alt_phone",
+      label: "Other phone",
+      kind: "text",
+      aliases: ["second phone", "alternative phone", "next of kin phone"],
+      example: "0700-112233",
+    },
+    {
+      key: "nin",
+      label: "National ID (NIN)",
+      kind: "text",
+      aliases: ["nin", "national id", "id number", "id no"],
+      example: "CM12345678ABCD",
+    },
+    {
+      key: "location",
+      label: "Location",
+      kind: "text",
+      aliases: ["trading area", "market", "area", "shop location"],
+      example: "Nakawa Market, stall 14",
+    },
+    {
+      key: "residence",
+      label: "Residing place",
+      kind: "text",
+      aliases: ["residence", "home", "home address", "resides", "village"],
+      example: "Kireka, Kamuli Road",
+    },
+    {
+      key: "occupation",
+      label: "Occupation",
+      kind: "text",
+      aliases: ["business", "job", "trade"],
+      example: "Retail shop owner",
+    },
+    {
+      key: "guarantor_name",
+      label: "Guarantor",
+      kind: "text",
+      aliases: ["referee", "guarantor name"],
+      example: "Sarah Nabbosa",
+    },
+    {
+      key: "guarantor_phone",
+      label: "Guarantor phone",
+      kind: "text",
+      aliases: ["referee phone", "guarantor contact"],
+      example: "0782-556677",
+    },
+    {
+      key: "credit_limit",
+      label: "Credit limit",
+      kind: "money",
+      fallback: 0,
+      aliases: ["limit", "credit ceiling"],
+      example: "1000000",
     },
     { key: "notes", label: "Notes", kind: "text", aliases: ["note", "remarks"], example: "Weekly buyer" },
   ],
@@ -104,6 +161,7 @@ const EXPENSES: TransferSchema = {
   label: "Expenses",
   table: "expenses",
   description: "Rent, wages, transport and other money going out.",
+  dateKey: "expense_date",
   columns: [
     {
       key: "description",
@@ -211,12 +269,65 @@ const DEBTS: TransferSchema = {
   ],
 };
 
+/**
+ * The stock ledger: every crate that came in and every unit that went out.
+ *
+ * Export-only, and the reason the export page has a period at all — the owner's
+ * question is almost always "what moved last month?", and a stock take is only
+ * worth anything against the movements that produced it.
+ */
+const STOCK_MOVEMENTS: TransferSchema = {
+  id: "stock_movements",
+  label: "Stock movements",
+  table: "stock_transactions",
+  description:
+    "Stock in, sales, adjustments and damages, movement by movement. Pick a period to take out one month at a time.",
+  dateKey: "created_at",
+  columns: [
+    { key: "created_at", label: "Date", kind: "text" },
+    { key: "product_name", label: "Product", kind: "text" },
+    { key: "category", label: "Category", kind: "text" },
+    { key: "type", label: "Movement", kind: "text" },
+    // Signed, so a column of these sums to the net change over the period.
+    { key: "quantity_in", label: "Quantity in", kind: "integer" },
+    { key: "quantity_out", label: "Quantity out", kind: "integer" },
+    { key: "stock_after", label: "Stock on hand today", kind: "integer" },
+    { key: "buying_price", label: "Buying price", kind: "money" },
+    { key: "movement_value", label: "Value moved", kind: "money" },
+    { key: "expiry_date", label: "Expiry date", kind: "text" },
+    { key: "notes", label: "Notes", kind: "text" },
+  ],
+  decorate(rows, context: ExportContext) {
+    const byId = new Map(context.products.map((p) => [String(p.id), p]));
+    // Adjustments add to the shelf; sales and damages take off it.
+    const inbound = new Set(["stock_in", "adjustment"]);
+
+    return rows.map((row) => {
+      const product = byId.get(String(row.product_id)) ?? {};
+      const qty = Math.abs(Number(row.quantity) || 0);
+      const isIn = inbound.has(String(row.type));
+      const cost = Number(product.unit_buying_price ?? 0);
+      return {
+        ...row,
+        product_name: row.product_name ?? product.name ?? "Unknown product",
+        category: product.category ?? "",
+        quantity_in: isIn ? qty : 0,
+        quantity_out: isIn ? 0 : qty,
+        stock_after: Number(product.stock_quantity ?? 0),
+        buying_price: cost,
+        movement_value: cost * qty,
+      };
+    });
+  },
+};
+
 /** Sales are exported for the books; they are made at the counter, not imported. */
 const SALES: TransferSchema = {
   id: "sales",
   label: "Sales",
   table: "sales",
   description: "Every completed sale, for your accountant or your own records.",
+  dateKey: "created_at",
   columns: [
     { key: "created_at", label: "Date", kind: "text" },
     { key: "sale_type", label: "Type", kind: "text" },
@@ -355,8 +466,8 @@ function products(industry: IndustryProfile): TransferSchema {
 
 /** Everything this business can move in and out, in menu order. */
 export function datasetsFor(industry: IndustryProfile): TransferSchema[] {
-  return [products(industry), STAFF, CUSTOMERS, DEBTS, SUPPLIERS, EXPENSES, SALES];
+  return [products(industry), STOCK_MOVEMENTS, STAFF, CUSTOMERS, DEBTS, SUPPLIERS, EXPENSES, SALES];
 }
 
 /** Datasets that only make sense to export. */
-export const EXPORT_ONLY = new Set(["sales"]);
+export const EXPORT_ONLY = new Set(["sales", "stock_movements"]);

@@ -31,6 +31,12 @@ export type TransferColumn = {
   example?: string;
 };
 
+/** Lists an export may need to join against to turn ids into names. */
+export type ExportContext = {
+  products: Record<string, unknown>[];
+  customers: Record<string, unknown>[];
+};
+
 export type TransferSchema = {
   id: string;
   label: string;
@@ -38,9 +44,49 @@ export type TransferSchema = {
   table: string;
   description: string;
   columns: TransferColumn[];
+  /**
+   * The column an export is filtered by date on. Set it and the page offers a
+   * period — which is what makes "last month's stock" a download rather than a
+   * spreadsheet the owner has to trim by hand.
+   */
+  dateKey?: string;
   /** Extra checks across the whole row; return a message to reject it. */
   validateRow?: (row: Record<string, unknown>, raw: RawRow) => string | null;
+  /**
+   * Last pass over the rows before they are written out. A stock movement
+   * stores a product id, and nobody analyses a spreadsheet of UUIDs.
+   */
+  decorate?: (
+    rows: Record<string, unknown>[],
+    context: ExportContext,
+  ) => Record<string, unknown>[];
 };
+
+/** The date part of a value that may be a date or a full timestamp. */
+export function dayOf(value: unknown): string {
+  const text = String(value ?? "");
+  if (/^\d{4}-\d{2}-\d{2}/.test(text)) return text.slice(0, 10);
+  const parsed = new Date(text);
+  return Number.isNaN(parsed.getTime()) ? "" : parsed.toISOString().slice(0, 10);
+}
+
+/** Rows whose `dateKey` falls inside the period. Undated rows are kept: a
+ * missing timestamp is a data gap, and silently dropping it loses stock. */
+export function withinPeriod(
+  schema: TransferSchema,
+  rows: Record<string, unknown>[],
+  from: string,
+  to: string,
+): Record<string, unknown>[] {
+  if (!schema.dateKey || (!from && !to)) return rows;
+  return rows.filter((row) => {
+    const day = dayOf(row[schema.dateKey as string]);
+    if (!day) return true;
+    if (from && day < from) return false;
+    if (to && day > to) return false;
+    return true;
+  });
+}
 
 /* ------------------------------------------------------------------ */
 /* reading                                                             */
