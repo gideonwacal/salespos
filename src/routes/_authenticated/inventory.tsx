@@ -291,6 +291,13 @@ function Inventory() {
             {products.length} items · valuation{" "}
             {ugx(products.reduce((a, p) => a + Number(p.unit_buying_price) * p.stock_quantity, 0))}
           </p>
+          {/* A hidden button looks like a broken one. Say which it is. */}
+          {!isOwner && (
+            <p className="mt-1 text-xs text-muted-foreground">
+              You are signed in as sales staff: you can add and correct items, but only the owner
+              can delete them.
+            </p>
+          )}
         </div>
         <div className="flex flex-wrap gap-2">
           <Button variant="outline" onClick={exportCsv}>

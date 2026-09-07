@@ -1,6 +1,6 @@
 import { Fragment, useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
-import { ArrowRight, ChevronRight } from "lucide-react";
+import { ArrowRight, ChevronRight, Trash2 } from "lucide-react";
 import {
   isThisMonth,
   outstanding,
@@ -14,7 +14,10 @@ import {
   type StockTxn,
   type Supplier,
 } from "@/lib/data";
-import { staffUserId, type StaffRow } from "@/lib/db";
+import { deleteRow, staffUserId, type StaffRow } from "@/lib/db";
+import { useAuth } from "@/hooks/useAuth";
+import { useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { ugx, num, shortDate, paymentLabel } from "@/lib/format";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -80,6 +83,33 @@ export function KpiDetail({
   /** Stock movements, so an empty shelf can say when it last sold. */
   movements?: StockTxn[];
 }) {
+  const { isOwner } = useAuth();
+  const queryClient = useQueryClient();
+
+  /**
+   * Remove a customer, owner only.
+   *
+   * The server refuses anyone still holding money or empties — debts cascade
+   * off the customer row, so deleting one mid-balance would quietly take the
+   * record of the money with it. Whatever it says comes straight to the screen.
+   */
+  const deleteCustomer = async (customer: Customer) => {
+    if (
+      !window.confirm(
+        `Delete ${customer.name}? Their contact details and credit history go with them.`,
+      )
+    ) {
+      return;
+    }
+    try {
+      await deleteRow("customers", customer.id);
+      toast.success(`${customer.name} deleted`);
+      queryClient.invalidateQueries();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not delete that customer");
+    }
+  };
+
   const title = {
     sales: "Sales breakdown",
     credit: "Credit & outstanding balances",
@@ -115,7 +145,14 @@ export function KpiDetail({
           {panel === "sales" && <SalesDetail sales={sales} debts={debts} />}
           {panel === "credit" && <CreditDetail debts={debts} customers={customers} />}
           {panel === "stock" && <StockDetail products={products} />}
-          {panel === "customers" && <CustomerDetail customers={customers} debts={debts} />}
+          {panel === "customers" && (
+            <CustomerDetail
+              customers={customers}
+              debts={debts}
+              isOwner={isOwner}
+              onDelete={deleteCustomer}
+            />
+          )}
           {panel === "suppliers" && <SupplierDetail suppliers={suppliers} purchases={purchases} />}
           {(panel === "outofstock" || panel === "lowstock") && (
             <ShelfDetail
@@ -605,24 +642,53 @@ function Fact({ label, value }: { label: string; value?: string | null }) {
  * contact, the national ID collected at the counter, where they trade, what
  * they are holding. A tap opens the rest in place.
  */
-function CustomerDetail({ customers, debts }: { customers: Customer[]; debts: Debt[] }) {
+/**
+ * Every customer, sorted into the two kinds a shop actually has.
+ *
+ * A creditor is someone carrying an unsettled balance; a cash customer is
+ * everyone else — they may buy every week, they just never leave owing. The
+ * distinction decides who gets chased and who gets served, so it is a tab
+ * rather than something to work out from a column of figures.
+ *
+ * Deleting is the owner's, and the server refuses anyone still holding money
+ * or empties: debts cascade off the customer, so removing one mid-balance
+ * would take the record of the money with them.
+ */
+function CustomerDetail({
+  customers,
+  debts,
+  isOwner,
+  onDelete,
+}: {
+  customers: Customer[];
+  debts: Debt[];
+  isOwner: boolean;
+  onDelete: (customer: Customer) => void;
+}) {
   const [openId, setOpenId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  const [kind, setKind] = useState<"all" | "credit" | "cash">("all");
 
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase();
     return customers
       .map((customer) => {
-        const theirs = debts.filter(
-          (d) => d.customer_id === customer.id && debtStatus(d) !== "cleared",
-        );
+        const theirs = debts.filter((d) => d.customer_id === customer.id);
+        const live = theirs.filter((d) => debtStatus(d) !== "cleared");
+        const owed = live.reduce((a, d) => a + outstanding(d), 0);
         return {
           customer,
-          owed: theirs.reduce((a, d) => a + outstanding(d), 0),
-          open: theirs.length,
-          overdue: theirs.some((d) => debtStatus(d) === "overdue"),
+          owed,
+          open: live.length,
+          settled: theirs.length - live.length,
+          overdue: live.some((d) => debtStatus(d) === "overdue"),
+          // Owing now is what makes someone a creditor. Someone who has taken
+          // credit before and cleared it is back to cash, which is the whole
+          // point of clearing it.
+          creditor: owed > 0,
         };
       })
+      .filter((r) => (kind === "all" ? true : kind === "credit" ? r.creditor : !r.creditor))
       .filter(({ customer: c }) =>
         !q
           ? true
@@ -631,7 +697,17 @@ function CustomerDetail({ customers, debts }: { customers: Customer[]; debts: De
               .some((f) => String(f).toLowerCase().includes(q)),
       )
       .sort((a, b) => b.owed - a.owed || a.customer.name.localeCompare(b.customer.name));
-  }, [customers, debts, query]);
+  }, [customers, debts, query, kind]);
+
+  const creditorCount = useMemo(
+    () =>
+      customers.filter((c) =>
+        debts.some(
+          (d) => d.customer_id === c.id && debtStatus(d) !== "cleared" && outstanding(d) > 0,
+        ),
+      ).length,
+    [customers, debts],
+  );
 
   if (!customers.length) return <Empty what="customers" />;
 
@@ -639,30 +715,51 @@ function CustomerDetail({ customers, debts }: { customers: Customer[]; debts: De
     <div className="space-y-3">
       <div className="grid gap-2 sm:grid-cols-3">
         <Stat label="Customers" value={num(customers.length)} />
-        <Stat label="On credit" value={num(rows.filter((r) => r.open > 0).length)} />
-        <Stat
-          label="Empties out"
-          value={num(customers.reduce((a, c) => a + Number(c.bottles_owed ?? 0), 0))}
-        />
+        <Stat label="Creditors" value={num(creditorCount)} />
+        <Stat label="Cash basis" value={num(customers.length - creditorCount)} />
       </div>
 
-      <Input
-        placeholder="Search a name, phone, NIN or place"
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-      />
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="flex gap-1 rounded-lg border border-border p-0.5">
+          {(
+            [
+              ["all", "All"],
+              ["credit", "Creditors"],
+              ["cash", "Cash basis"],
+            ] as const
+          ).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => setKind(value)}
+              className={`rounded-md px-2.5 py-1 text-xs font-semibold transition-colors ${
+                kind === value ? "bg-primary/10 text-primary" : "text-muted-foreground"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <Input
+          className="h-8 max-w-xs"
+          placeholder="Search a name, phone, NIN or place"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+      </div>
 
       <Table>
         <TableHeader>
           <TableRow>
             <TableHead>Customer</TableHead>
-            <TableHead>Phone</TableHead>
+            <TableHead>Basis</TableHead>
             <TableHead className="text-right">Owes</TableHead>
             <TableHead className="text-right">Empties</TableHead>
+            {isOwner && <TableHead />}
           </TableRow>
         </TableHeader>
         <TableBody>
-          {rows.map(({ customer: c, owed, open, overdue }) => {
+          {rows.map(({ customer: c, owed, open, settled, overdue, creditor }) => {
             const isOpen = openId === c.id;
             return (
               <Fragment key={c.id}>
@@ -677,11 +774,25 @@ function CustomerDetail({ customers, debts }: { customers: Customer[]; debts: De
                       />
                       {c.name}
                     </span>
+                    <span className="ml-5 text-[11px] text-muted-foreground">
+                      {c.phone || "No contact"}
+                    </span>
                   </TableCell>
-                  <TableCell className="text-muted-foreground">{c.phone || "—"}</TableCell>
-                  <TableCell
-                    className={`tabular text-right font-semibold ${overdue ? "text-destructive" : ""}`}
-                  >
+                  <TableCell>
+                    <Badge
+                      variant="outline"
+                      className={
+                        creditor
+                          ? overdue
+                            ? "border-destructive text-destructive"
+                            : "border-warning/60 text-warning-foreground"
+                          : "border-success/60 text-success"
+                      }
+                    >
+                      {creditor ? (overdue ? "overdue" : "creditor") : "cash"}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="tabular text-right font-semibold">
                     {owed > 0 ? ugx(owed) : "—"}
                     {open > 1 && (
                       <span className="ml-1 text-[10px] font-normal text-muted-foreground">
@@ -692,10 +803,26 @@ function CustomerDetail({ customers, debts }: { customers: Customer[]; debts: De
                   <TableCell className="tabular text-right">
                     {Number(c.bottles_owed) ? num(c.bottles_owed) : "—"}
                   </TableCell>
+                  {isOwner && (
+                    <TableCell className="text-right">
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="size-7 text-destructive"
+                        title="Delete this customer"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onDelete(c);
+                        }}
+                      >
+                        <Trash2 className="size-3.5" />
+                      </Button>
+                    </TableCell>
+                  )}
                 </TableRow>
                 {isOpen && (
                   <TableRow className="bg-muted/40 hover:bg-muted/40">
-                    <TableCell colSpan={4} className="p-3">
+                    <TableCell colSpan={isOwner ? 5 : 4} className="p-3">
                       <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
                         <Fact label="Phone" value={c.phone} />
                         <Fact label="Other phone" value={c.alt_phone} />
@@ -707,7 +834,12 @@ function CustomerDetail({ customers, debts }: { customers: Customer[]; debts: De
                         <Fact label="Guarantor phone" value={c.guarantor_phone} />
                         <Fact label="Customer since" value={shortDate(c.created_at)} />
                       </div>
-                      {c.notes && <p className="mt-2 text-xs text-muted-foreground">{c.notes}</p>}
+                      <p className="mt-2 text-xs text-muted-foreground">
+                        {settled > 0
+                          ? `${settled} credit sale${settled === 1 ? "" : "s"} settled in full.`
+                          : "No credit history."}
+                        {c.notes ? ` ${c.notes}` : ""}
+                      </p>
                     </TableCell>
                   </TableRow>
                 )}
@@ -716,8 +848,15 @@ function CustomerDetail({ customers, debts }: { customers: Customer[]; debts: De
           })}
           {rows.length === 0 && (
             <TableRow>
-              <TableCell colSpan={4} className="py-6 text-center text-muted-foreground">
-                No customer matches that search.
+              <TableCell
+                colSpan={isOwner ? 5 : 4}
+                className="py-6 text-center text-muted-foreground"
+              >
+                {kind === "credit"
+                  ? "Nobody is carrying a balance."
+                  : kind === "cash"
+                    ? "Every customer is on credit right now."
+                    : "No customer matches that search."}
               </TableCell>
             </TableRow>
           )}

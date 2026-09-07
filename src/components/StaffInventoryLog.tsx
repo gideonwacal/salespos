@@ -13,10 +13,21 @@
  */
 
 import { useMemo, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { Link } from "@tanstack/react-router";
-import { ArrowRight, ClipboardList, PackagePlus, PackageX, Search, Tag } from "lucide-react";
+import {
+  ArrowRight,
+  ClipboardList,
+  PackagePlus,
+  PackageX,
+  Search,
+  Tag,
+  Trash2,
+} from "lucide-react";
 import { type DamageReport, type Product, type StockTxn } from "@/lib/data";
-import { staffUserId, type StaffRow } from "@/lib/db";
+import { deleteRow, staffUserId, type StaffRow } from "@/lib/db";
+import { useAuth } from "@/hooks/useAuth";
 import { num, shortDate, ugx } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -42,6 +53,8 @@ import {
 /** Anything a member of staff did to the store, flattened into one shape. */
 type Entry = {
   id: string;
+  /** The product the entry is about, so the owner can act on it from here. */
+  productId: string;
   kind: "item" | "received" | "damage";
   when: string;
   product: string;
@@ -63,8 +76,32 @@ export function StaffInventoryLog({
   damages: DamageReport[];
   staff: StaffRow[];
 }) {
+  const { isOwner } = useAuth();
+  const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+
+  /**
+   * Remove an item the counter added, from the same screen it is questioned on.
+   *
+   * Only offered against a new item: a delivery or a write-off is history, and
+   * deleting the history of a movement would leave the shelf count unexplained.
+   * The product itself is refused by the server once it has been sold.
+   */
+  const removeProduct = async (entry: Entry) => {
+    if (!window.confirm(`Delete "${entry.product}" from the store? This cannot be undone.`)) {
+      return;
+    }
+    try {
+      await deleteRow("products", entry.productId);
+      toast.success(`${entry.product} removed`);
+      queryClient.invalidateQueries();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not delete that item", {
+        description: "Set its stock to zero instead if it appears on past sales.",
+      });
+    }
+  };
 
   const nameFor = useMemo(() => {
     const byId = new Map(staff.map((s) => [staffUserId(s), s.full_name || s.email]));
@@ -80,6 +117,7 @@ export function StaffInventoryLog({
   const entries = useMemo<Entry[]>(() => {
     const items: Entry[] = products.map((p) => ({
       id: `item-${p.id}`,
+      productId: p.id,
       kind: "item",
       when: p.created_at,
       product: p.name,
@@ -95,6 +133,7 @@ export function StaffInventoryLog({
         const p = productFor(t.product_id);
         return {
           id: `move-${t.id}`,
+          productId: t.product_id,
           kind: "received",
           when: t.created_at,
           product: (t as { product_name?: string }).product_name || p?.name || "Unknown product",
@@ -109,6 +148,7 @@ export function StaffInventoryLog({
       const p = productFor(d.product_id);
       return {
         id: `damage-${d.id}`,
+        productId: d.product_id,
         kind: "damage",
         when: d.created_at,
         product: p?.name ?? "Unknown product",
@@ -240,6 +280,7 @@ export function StaffInventoryLog({
                       <TableHead>Who</TableHead>
                       <TableHead className="text-right">Qty</TableHead>
                       <TableHead className="text-right">At cost</TableHead>
+                      {isOwner && <TableHead />}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -262,12 +303,27 @@ export function StaffInventoryLog({
                         <TableCell className="tabular text-right font-semibold">
                           {ugx(e.value)}
                         </TableCell>
+                        {isOwner && (
+                          <TableCell className="text-right">
+                            {e.kind === "item" && (
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                className="size-7 text-destructive"
+                                title="Delete this item from the store"
+                                onClick={() => removeProduct(e)}
+                              >
+                                <Trash2 className="size-3.5" />
+                              </Button>
+                            )}
+                          </TableCell>
+                        )}
                       </TableRow>
                     ))}
                     {filtered.length === 0 && (
                       <TableRow>
                         <TableCell
-                          colSpan={6}
+                          colSpan={isOwner ? 7 : 6}
                           className="py-8 text-center text-sm text-muted-foreground"
                         >
                           {entries.length === 0

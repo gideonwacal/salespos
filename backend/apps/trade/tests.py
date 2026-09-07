@@ -40,6 +40,48 @@ class TradeApiTests(TestCase):
             due_date=timezone.localdate() + timedelta(days=due_in_days),
         )
 
+    # --- deleting a customer -------------------------------------------------
+
+    def test_owner_can_delete_a_settled_customer(self):
+        response = self.client.delete(
+            f"/api/customers/{self.customer.id}/", **self.headers
+        )
+        self.assertEqual(response.status_code, 204)
+        self.assertFalse(Customer.objects.filter(pk=self.customer.pk).exists())
+
+    def test_a_customer_who_still_owes_cannot_be_deleted(self):
+        """Debts cascade off the customer, so this would erase the money owed."""
+        self._debt()
+
+        response = self.client.delete(
+            f"/api/customers/{self.customer.id}/", **self.headers
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("still owes", str(response.data))
+        self.assertTrue(Customer.objects.filter(pk=self.customer.pk).exists())
+
+    def test_a_customer_holding_empties_cannot_be_deleted(self):
+        self.customer.bottles_owed = 12
+        self.customer.save()
+
+        response = self.client.delete(
+            f"/api/customers/{self.customer.id}/", **self.headers
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("empties", str(response.data))
+
+    def test_staff_cannot_delete_a_customer(self):
+        staff = User.objects.create_user(
+            email="cashier@example.com", password="sup3rsecret!", full_name="Cashier"
+        )
+        Membership.objects.create(user=staff, workspace=self.workspace, role="manager")
+        client = APIClient()
+        client.force_authenticate(staff)
+
+        response = client.delete(f"/api/customers/{self.customer.id}/", **self.headers)
+        self.assertEqual(response.status_code, 403)
+        self.assertTrue(Customer.objects.filter(pk=self.customer.pk).exists())
+
     # --- know-your-customer --------------------------------------------------
 
     def test_credit_customer_stores_kyc_details(self):

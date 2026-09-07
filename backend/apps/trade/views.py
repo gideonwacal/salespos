@@ -10,6 +10,7 @@ from decimal import Decimal
 from django.db.models import Sum
 from django.utils import timezone
 from rest_framework.decorators import action
+from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 
 from apps.core.tenancy import WorkspaceViewSet
@@ -43,6 +44,30 @@ class CustomerViewSet(WorkspaceViewSet):
     # number that called, or the national ID on the form.
     search_fields = ["name", "phone", "alt_phone", "nin", "location", "residence"]
     ordering_fields = ["name", "created_at", "bottles_owed"]
+
+    def perform_destroy(self, instance):
+        """Delete a customer, but never one who is still holding something.
+
+        Debts cascade off the customer, so deleting someone mid-balance would
+        take the record of the money with them and the books would simply be
+        short. Empties are the same argument in crates. Clear the account
+        first; then the row can go.
+        """
+        owed = sum(
+            debt.total_value - debt.amount_paid
+            for debt in instance.debts.exclude(status="cleared")
+        )
+        if owed > 0:
+            raise ValidationError(
+                f"{instance.name} still owes {owed:.0f}. Settle or write off the balance "
+                "before deleting the customer."
+            )
+        if instance.bottles_owed > 0:
+            raise ValidationError(
+                f"{instance.name} is still holding {instance.bottles_owed} empties. "
+                "Record the returns before deleting the customer."
+            )
+        instance.delete()
 
 
 class DebtViewSet(WorkspaceViewSet):
