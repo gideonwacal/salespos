@@ -5,6 +5,11 @@ from apps.inventory.models import DamageReport, Product, StockTransaction
 
 class ProductSerializer(serializers.ModelSerializer):
     low_stock = serializers.BooleanField(read_only=True)
+    # Sent as a name so the dashboard does not have to join against the staff
+    # list to say who added an item.
+    created_by_name = serializers.CharField(
+        source="created_by.full_name", read_only=True, default=""
+    )
 
     class Meta:
         model = Product
@@ -27,9 +32,17 @@ class ProductSerializer(serializers.ModelSerializer):
             "bulk_min_qty",
             "bulk_discount_percent",
             "low_stock",
+            "created_by",
+            "created_by_name",
             "created_at",
         ]
-        read_only_fields = ["id", "created_at", "low_stock"]
+        read_only_fields = [
+            "id",
+            "created_at",
+            "low_stock",
+            "created_by",
+            "created_by_name",
+        ]
 
 
 class StockTransactionSerializer(serializers.ModelSerializer):

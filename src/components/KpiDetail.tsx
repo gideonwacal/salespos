@@ -1,6 +1,6 @@
-import { useMemo } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, ChevronRight } from "lucide-react";
 import {
   isThisMonth,
   outstanding,
@@ -84,7 +84,7 @@ export function KpiDetail({
 
         <div className="max-h-[60vh] overflow-y-auto">
           {panel === "expenses" && <ExpenseDetail expenses={expenses} staff={staff} />}
-          {panel === "sales" && <SalesDetail sales={sales} />}
+          {panel === "sales" && <SalesDetail sales={sales} debts={debts} />}
           {panel === "credit" && <CreditDetail debts={debts} customers={customers} />}
           {panel === "stock" && <StockDetail products={products} />}
         </div>
@@ -112,6 +112,7 @@ function Empty({ what }: { what: string }) {
 }
 
 function ExpenseDetail({ expenses, staff }: { expenses: Expense[]; staff: StaffRow[] }) {
+  const [openId, setOpenId] = useState<string | null>(null);
   /** Whoever keyed the expense in. Money going out has a person behind it, and
    * "which of my staff spent this?" is the question the total is hiding. */
   const nameFor = useMemo(() => {
@@ -227,7 +228,7 @@ function ExpenseDetail({ expenses, staff }: { expenses: Expense[]; staff: StaffR
 
       <section>
         <h3 className="mb-1 text-xs font-bold uppercase tracking-wide text-muted-foreground">
-          Most recent
+          Most recent — tap a row for the detail
         </h3>
         <Table>
           <TableHeader>
@@ -241,29 +242,60 @@ function ExpenseDetail({ expenses, staff }: { expenses: Expense[]; staff: StaffR
             </TableRow>
           </TableHeader>
           <TableBody>
-            {recent.map((e) => (
-              <TableRow key={e.id}>
-                <TableCell>{shortDate(e.expense_date)}</TableCell>
-                <TableCell className="font-medium">{e.category}</TableCell>
-                <TableCell>{nameFor(e.logged_by)}</TableCell>
-                <TableCell className="text-muted-foreground">{e.vendor ?? "—"}</TableCell>
-                <TableCell>
-                  <Badge
-                    variant="outline"
-                    className={
-                      e.status === "approved"
-                        ? "border-success text-success"
-                        : e.status === "rejected"
-                          ? "border-destructive text-destructive"
-                          : ""
-                    }
+            {recent.map((e) => {
+              const isOpen = openId === e.id;
+              return (
+                <Fragment key={e.id}>
+                  <TableRow
+                    className="cursor-pointer"
+                    onClick={() => setOpenId(isOpen ? null : e.id)}
                   >
-                    {e.status ?? "pending"}
-                  </Badge>
-                </TableCell>
-                <Money>{ugx(e.amount)}</Money>
-              </TableRow>
-            ))}
+                    <TableCell>
+                      <span className="flex items-center gap-1.5">
+                        <ChevronRight
+                          className={`size-3.5 transition-transform ${isOpen ? "rotate-90" : ""}`}
+                        />
+                        {shortDate(e.expense_date)}
+                      </span>
+                    </TableCell>
+                    <TableCell className="font-medium">{e.category}</TableCell>
+                    <TableCell>{nameFor(e.logged_by)}</TableCell>
+                    <TableCell className="text-muted-foreground">{e.vendor ?? "—"}</TableCell>
+                    <TableCell>
+                      <Badge
+                        variant="outline"
+                        className={
+                          e.status === "approved"
+                            ? "border-success text-success"
+                            : e.status === "rejected"
+                              ? "border-destructive text-destructive"
+                              : ""
+                        }
+                      >
+                        {e.status ?? "pending"}
+                      </Badge>
+                    </TableCell>
+                    <Money>{ugx(e.amount)}</Money>
+                  </TableRow>
+
+                  {isOpen && (
+                    <TableRow className="bg-muted/40 hover:bg-muted/40">
+                      <TableCell colSpan={6} className="p-3">
+                        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                          <Fact label="Logged by" value={nameFor(e.logged_by)} />
+                          <Fact label="Paid via" value={paymentLabel(e.payment_method)} />
+                          <Fact label="Paid to" value={e.vendor} />
+                          <Fact label="Logged on" value={shortDate(e.created_at)} />
+                        </div>
+                        {e.description && (
+                          <p className="mt-2 text-xs text-muted-foreground">{e.description}</p>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </Fragment>
+              );
+            })}
           </TableBody>
         </Table>
       </section>
@@ -271,7 +303,22 @@ function ExpenseDetail({ expenses, staff }: { expenses: Expense[]; staff: StaffR
   );
 }
 
-function SalesDetail({ sales }: { sales: Sale[] }) {
+function SalesDetail({ sales, debts }: { sales: Sale[]; debts: Debt[] }) {
+  // Credit is the half of "total sales" that has not been paid for. Showing
+  // the two together is the point: a record month on paper can be a month
+  // where nothing came into the till.
+  const credit = useMemo(() => {
+    const onCredit = sales.filter((s) => s.payment_method === "credit");
+    return {
+      count: onCredit.length,
+      value: onCredit.reduce((a, s) => a + Number(s.total_amount), 0),
+      owed: debts.reduce((a, d) => a + outstanding(d), 0),
+      overdue: debts
+        .filter((d) => debtStatus(d) === "overdue")
+        .reduce((a, d) => a + outstanding(d), 0),
+    };
+  }, [sales, debts]);
+
   const byPayment = useMemo(() => {
     const map = new Map<string, { total: number; count: number }>();
     for (const s of sales) {
@@ -302,6 +349,12 @@ function SalesDetail({ sales }: { sales: Sale[] }) {
           value={ugx(sales.reduce((a, s) => a + Number(s.total_amount), 0))}
         />
         <Stat label="Gross profit" value={ugx(profit)} />
+      </div>
+
+      <div className="grid gap-2 rounded-lg border border-warning/40 bg-warning-soft/40 p-2 sm:grid-cols-3">
+        <Stat label={`Credit sales (${num(credit.count)})`} value={ugx(credit.value)} />
+        <Stat label="Still owed" value={ugx(credit.owed)} />
+        <Stat label="Of which overdue" value={ugx(credit.overdue)} />
       </div>
 
       <section>
@@ -359,64 +412,151 @@ function SalesDetail({ sales }: { sales: Sale[] }) {
   );
 }
 
+/**
+ * Who the credit is with, one row per person, opening onto their details.
+ *
+ * The old panel listed debts, which is the accountant's view. The owner's
+ * question is "who owes me and how do I reach them?", so this groups by
+ * customer and expands in place — a tap gives the phone, the national ID and
+ * where they trade, without leaving the dashboard.
+ */
 function CreditDetail({ debts, customers }: { debts: Debt[]; customers: Customer[] }) {
+  const [openId, setOpenId] = useState<string | null>(null);
+
+  const creditors = useMemo(() => {
+    return customers
+      .map((customer) => {
+        const theirs = debts.filter(
+          (d) => d.customer_id === customer.id && debtStatus(d) !== "cleared",
+        );
+        const overdue = theirs.filter((d) => debtStatus(d) === "overdue");
+        const dues = theirs.map((d) => d.due_date).sort();
+        return {
+          customer,
+          debts: theirs,
+          balance: theirs.reduce((a, d) => a + outstanding(d), 0),
+          overdueValue: overdue.reduce((a, d) => a + outstanding(d), 0),
+          nextDue: dues[0] ?? null,
+        };
+      })
+      .filter((row) => row.debts.length > 0)
+      .sort((a, b) => b.overdueValue - a.overdueValue || b.balance - a.balance);
+  }, [customers, debts]);
+
   if (!debts.length) return <Empty what="credit accounts" />;
 
-  const nameFor = (id: string) =>
-    customers.find((c) => c.id === id)?.name ?? "Unknown customer";
-
-  const open = debts
-    .filter((d) => outstanding(d) > 0)
-    .sort((a, b) => outstanding(b) - outstanding(a));
+  const totalOwed = creditors.reduce((a, c) => a + c.balance, 0);
+  const overdueCount = debts.filter((d) => debtStatus(d) === "overdue").length;
 
   return (
     <div className="space-y-4">
       <div className="grid gap-2 sm:grid-cols-3">
-        <Stat label="Open accounts" value={num(open.length)} />
-        <Stat
-          label="Outstanding"
-          value={ugx(open.reduce((a, d) => a + outstanding(d), 0))}
-        />
-        <Stat
-          label="Overdue"
-          value={num(debts.filter((d) => debtStatus(d) === "overdue").length)}
-        />
+        <Stat label="People on credit" value={num(creditors.length)} />
+        <Stat label="Outstanding" value={ugx(totalOwed)} />
+        <Stat label="Overdue debts" value={num(overdueCount)} />
       </div>
+
+      <p className="text-xs text-muted-foreground">Tap a name to see their details.</p>
 
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>Customer</TableHead>
-            <TableHead>Due</TableHead>
+            <TableHead>Creditor</TableHead>
+            <TableHead>Next due</TableHead>
             <TableHead>Status</TableHead>
             <TableHead className="text-right">Owed</TableHead>
-            <TableHead className="text-right">Paid</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
-          {open.map((d) => {
-            const status = debtStatus(d);
+          {creditors.map((row) => {
+            const c = row.customer;
+            const isOpen = openId === c.id;
             return (
-              <TableRow key={d.id}>
-                <TableCell className="font-medium">{nameFor(d.customer_id)}</TableCell>
-                <TableCell>{shortDate(d.due_date)}</TableCell>
-                <TableCell>
-                  <Badge
-                    variant="outline"
-                    className={status === "overdue" ? "border-destructive text-destructive" : ""}
-                  >
-                    {status}
-                  </Badge>
-                </TableCell>
-                <Money>{ugx(outstanding(d))}</Money>
-                <TableCell className="tabular text-right text-muted-foreground">
-                  {ugx(d.amount_paid)}
-                </TableCell>
-              </TableRow>
+              <Fragment key={c.id}>
+                <TableRow
+                  className="cursor-pointer"
+                  onClick={() => setOpenId(isOpen ? null : c.id)}
+                >
+                  <TableCell className="font-medium">
+                    <span className="flex items-center gap-1.5">
+                      <ChevronRight
+                        className={`size-3.5 transition-transform ${isOpen ? "rotate-90" : ""}`}
+                      />
+                      {c.name}
+                    </span>
+                    <span className="ml-5 text-[11px] text-muted-foreground">
+                      {c.phone || "No contact"} · {row.debts.length} open
+                    </span>
+                  </TableCell>
+                  <TableCell>{row.nextDue ? shortDate(row.nextDue) : "—"}</TableCell>
+                  <TableCell>
+                    <Badge
+                      variant="outline"
+                      className={row.overdueValue > 0 ? "border-destructive text-destructive" : ""}
+                    >
+                      {row.overdueValue > 0 ? "overdue" : "on terms"}
+                    </Badge>
+                  </TableCell>
+                  <Money>{ugx(row.balance)}</Money>
+                </TableRow>
+
+                {isOpen && (
+                  <TableRow className="bg-muted/40 hover:bg-muted/40">
+                    <TableCell colSpan={4} className="p-3">
+                      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                        <Fact label="Phone" value={c.phone} />
+                        <Fact label="Other phone" value={c.alt_phone} />
+                        <Fact label="National ID (NIN)" value={c.nin} />
+                        <Fact label="Location" value={c.location} />
+                        <Fact label="Residing place" value={c.residence} />
+                        <Fact label="Occupation" value={c.occupation} />
+                        <Fact label="Guarantor" value={c.guarantor_name} />
+                        <Fact label="Guarantor phone" value={c.guarantor_phone} />
+                        <Fact
+                          label="Credit limit"
+                          value={Number(c.credit_limit) > 0 ? ugx(Number(c.credit_limit)) : ""}
+                        />
+                      </div>
+
+                      <ul className="mt-3 space-y-1 text-xs">
+                        {row.debts.map((d) => (
+                          <li key={d.id} className="flex items-center justify-between gap-3">
+                            <span className="truncate text-muted-foreground">
+                              {d.items_summary || "Credit"}
+                            </span>
+                            <span className="shrink-0 tabular">
+                              {ugx(outstanding(d))} · due {shortDate(d.due_date)}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+
+                      {c.notes && <p className="mt-2 text-xs text-muted-foreground">{c.notes}</p>}
+                    </TableCell>
+                  </TableRow>
+                )}
+              </Fragment>
             );
           })}
+          {creditors.length === 0 && (
+            <TableRow>
+              <TableCell colSpan={4} className="py-6 text-center text-muted-foreground">
+                Every credit account is settled.
+              </TableCell>
+            </TableRow>
+          )}
         </TableBody>
       </Table>
+    </div>
+  );
+}
+
+/** One recorded detail, or an honest blank. */
+function Fact({ label, value }: { label: string; value?: string | null }) {
+  return (
+    <div className="rounded-md border border-border bg-card px-2.5 py-1.5">
+      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</p>
+      <p className={`text-xs ${value ? "" : "text-muted-foreground"}`}>{value || "Not recorded"}</p>
     </div>
   );
 }

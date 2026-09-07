@@ -33,6 +33,17 @@ class Product(WorkspaceScoped):
         max_digits=6, decimal_places=2, default=0
     )
 
+    # Who put this item on the system. The owner is answerable for the stock
+    # list but rarely types it in, so "who added this?" is a real question —
+    # and until now the answer was nowhere.
+    created_by = models.ForeignKey(
+        "accounts.User",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="products_added",
+    )
+
     class Meta:
         db_table = "products"
         ordering = ["name"]

@@ -22,6 +22,9 @@ export type Product = {
   bulk_min_qty: number;
   bulk_discount_percent: number;
   created_at: string;
+  /** Who put the item on the system. Absent on rows created before this. */
+  created_by?: string | null;
+  created_by_name?: string | null;
 };
 
 export type DamageReport = {

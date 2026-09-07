@@ -26,6 +26,9 @@ class ProductViewSet(WorkspaceViewSet):
     search_fields = ["name", "category"]
     ordering_fields = ["name", "stock_quantity", "created_at"]
 
+    def perform_create(self, serializer):
+        serializer.save(workspace=self.request.workspace, created_by=self.request.user)
+
     @action(detail=False, methods=["get"])
     def low_stock(self, request):
         rows = low_stock_products(request.workspace).order_by("name")

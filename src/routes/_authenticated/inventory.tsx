@@ -142,7 +142,10 @@ function Inventory() {
       prescription_only: form.prescription_only,
     };
     if (editing) await updateRow("products", editing.id, payload);
-    else await insertRows("products", payload);
+    // created_by is server-owned on a live session (the serializer ignores it),
+    // but the local store has no request user to stamp it from, so send it and
+    // "added by" works on both backends.
+    else await insertRows("products", { ...payload, created_by: user?.id ?? null });
     toast.success(editing ? "Item updated" : "Item added");
     setOpen(false);
     queryClient.invalidateQueries({ queryKey: ["products"] });

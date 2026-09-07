@@ -203,3 +203,34 @@ class ClearStoreTests(TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn("past sales", str(response.data))
         self.assertTrue(Product.objects.filter(pk=self.sugar.pk).exists())
+
+    def test_a_new_product_records_who_added_it(self):
+        self.client.force_authenticate(self.cashier)
+        response = self.client.post(
+            "/api/products/",
+            {"name": "Blue Band 500g", "unit_selling_price": "9000"},
+            format="json",
+            **self.headers,
+        )
+        self.assertEqual(response.status_code, 201, response.data)
+        # The owner's dashboard asks "who put this on the price list?" — the
+        # answer has to be stored at the moment it is created.
+        self.assertEqual(response.data["created_by"], self.cashier.id)
+        self.assertEqual(
+            Product.objects.get(pk=response.data["id"]).created_by, self.cashier
+        )
+
+    def test_staff_may_edit_but_not_delete(self):
+        self.client.force_authenticate(self.cashier)
+
+        edit = self.client.patch(
+            f"/api/products/{self.rice.id}/",
+            {"unit_selling_price": "7500"},
+            format="json",
+            **self.headers,
+        )
+        self.assertEqual(edit.status_code, 200, edit.data)
+
+        delete = self.client.delete(f"/api/products/{self.rice.id}/", **self.headers)
+        self.assertEqual(delete.status_code, 403)
+        self.assertTrue(Product.objects.filter(pk=self.rice.pk).exists())

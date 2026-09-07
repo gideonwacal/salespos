@@ -1,9 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
-import { Plus, PencilLine } from "lucide-react";
+import { Plus, PencilLine, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
-import { insertRows, updateRow } from "@/lib/db";
+import { insertRows, updateRow, deleteRow } from "@/lib/db";
 import { useExpenses, isThisMonth, type Expense } from "@/lib/data";
 import { ugx, shortDate, EXPENSE_CATEGORIES, PAYMENT_METHODS, paymentLabel } from "@/lib/format";
 import { useAuth } from "@/hooks/useAuth";
@@ -68,6 +68,28 @@ function Expenses() {
   // An expense the owner has already ruled on is settled: the server refuses a
   // staff edit, so don't offer one either.
   const mayEdit = (e: Expense) => isOwner || e.status === "pending";
+
+  /**
+   * Only the owner deletes. Staff correct what they typed; removing the record
+   * of money that left the business is a different act, and the server refuses
+   * it for anyone else anyway.
+   */
+  const remove = async (e: Expense) => {
+    if (
+      !window.confirm(
+        `Delete the ${e.category} expense of ${ugx(e.amount)}? This cannot be undone.`,
+      )
+    ) {
+      return;
+    }
+    try {
+      await deleteRow("expenses", e.id);
+      toast.success("Expense deleted");
+      queryClient.invalidateQueries({ queryKey: ["expenses"] });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not delete that expense");
+    }
+  };
 
   const openNew = () => {
     setEditing(null);
@@ -209,18 +231,31 @@ function Expenses() {
                     </Badge>
                   </TableCell>
                   <TableCell className="text-right">
-                    {mayEdit(e) ? (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        title="Correct this expense"
-                        onClick={() => openEdit(e)}
-                      >
-                        <PencilLine className="size-4" />
-                      </Button>
-                    ) : (
-                      <span className="text-xs text-muted-foreground">owner only</span>
-                    )}
+                    <div className="flex items-center justify-end gap-1">
+                      {mayEdit(e) ? (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          title="Correct this expense"
+                          onClick={() => openEdit(e)}
+                        >
+                          <PencilLine className="size-4" />
+                        </Button>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">owner only</span>
+                      )}
+                      {isOwner && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="text-destructive"
+                          title="Delete this expense"
+                          onClick={() => remove(e)}
+                        >
+                          <Trash2 className="size-4" />
+                        </Button>
+                      )}
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}

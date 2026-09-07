@@ -75,3 +75,22 @@ class ExpenseApprovalTests(APITestCase):
             "/api/expenses/", {"category": "Odd", "amount": "-5"}, format="json"
         )
         self.assertEqual(response.status_code, 400)
+
+    def test_only_the_owner_deletes_an_expense(self):
+        """Staff correct what they typed; removing the record is the owner's."""
+        expense = Expense.objects.create(
+            workspace=self.workspace,
+            category="Transport",
+            amount=Decimal("150000"),
+            expense_date="2026-09-01",
+        )
+
+        self.client.force_authenticate(user=self.manager)
+        refused = self.client.delete(f"/api/expenses/{expense.id}/")
+        self.assertEqual(refused.status_code, 403)
+        self.assertTrue(Expense.objects.filter(pk=expense.pk).exists())
+
+        self.client.force_authenticate(user=self.owner)
+        allowed = self.client.delete(f"/api/expenses/{expense.id}/")
+        self.assertEqual(allowed.status_code, 204)
+        self.assertFalse(Expense.objects.filter(pk=expense.pk).exists())

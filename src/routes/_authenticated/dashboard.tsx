@@ -28,6 +28,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { KpiDetail, type KpiPanel } from "@/components/KpiDetail";
 import { StockMovementsDialog } from "@/components/StockMovementsDialog";
+import { StaffInventoryLog } from "@/components/StaffInventoryLog";
 import { type StaffRow } from "@/lib/db";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -48,6 +49,7 @@ import {
   useStaff,
   useSuppliers,
   usePurchases,
+  useDamageReports,
   isToday,
   isThisMonth,
   daysToExpiry,
@@ -56,6 +58,7 @@ import {
   EXPIRY_WARNING_DAYS,
 } from "@/lib/data";
 import { ugx, num, timeAgo, paymentLabel } from "@/lib/format";
+import { useAuth } from "@/hooks/useAuth";
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
   head: () => ({
@@ -77,6 +80,7 @@ export const Route = createFileRoute("/_authenticated/dashboard")({
 });
 
 function Dashboard() {
+  const { isOwner } = useAuth();
   const { data: products = [] } = useProducts();
   const { data: sales = [] } = useSales();
   const { data: expenses = [] } = useExpenses();
@@ -93,6 +97,7 @@ function Dashboard() {
   const [stockOpen, setStockOpen] = useState(false);
   const { data: suppliers = [] } = useSuppliers();
   const { data: purchases = [] } = usePurchases();
+  const { data: damages = [] } = useDamageReports();
 
   const m = useMemo(() => {
     const sum = (arr: number[]) => arr.reduce((a, b) => a + b, 0);
@@ -428,6 +433,16 @@ function Dashboard() {
           </CardContent>
         </Card>
       </div>
+
+      {/* The owner's window onto what the counter put into the store. */}
+      {isOwner && (
+        <StaffInventoryLog
+          products={products}
+          movements={movements}
+          damages={damages}
+          staff={staff as unknown as StaffRow[]}
+        />
+      )}
 
       <StockMovementsDialog
         open={stockOpen}
