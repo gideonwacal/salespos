@@ -213,6 +213,9 @@ function Dashboard() {
         customers={customers}
         products={products}
         staff={staff as unknown as StaffRow[]}
+        suppliers={suppliers}
+        purchases={purchases}
+        movements={movements}
       />
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -284,19 +287,33 @@ function Dashboard() {
             }
             to="/staff"
           />
-          <Info icon={Users} label="Customers" value={num(customers.length)} to="/debtors" />
-          <Info icon={Truck} label="Suppliers" value={num(suppliers.length)} to="/stock" />
+          <Info
+            icon={Users}
+            label="Customers"
+            value={num(customers.length)}
+            to="/debtors"
+            onExpand={() => setPanel("customers")}
+          />
+          <Info
+            icon={Truck}
+            label="Suppliers"
+            value={num(suppliers.length)}
+            to="/stock"
+            onExpand={() => setPanel("suppliers")}
+          />
           <Info
             icon={PackageX}
             label="Stopped / out-of-stock products"
             value={num(m.outOfStock.length)}
             to="/inventory"
+            onExpand={() => setPanel("outofstock")}
           />
           <Info
             icon={PackageSearch}
             label="Low stock products"
             value={num(m.lowStock.length)}
             to="/inventory"
+            onExpand={() => setPanel("lowstock")}
           />
         </div>
       </section>
@@ -552,33 +569,58 @@ function Mini({
   );
 }
 
+/**
+ * A headline in the "overall information" strip.
+ *
+ * Given `onExpand` it opens the rows behind the number in place, the way the
+ * four money cards above it do; the page it belongs to is still one click on
+ * from there. Without one it stays a plain link.
+ */
 function Info({
   icon: Icon,
   label,
   value,
   hint,
   to,
+  onExpand,
 }: {
   icon: LucideIcon;
   label: string;
   value: string;
   hint?: string;
   to: string;
+  onExpand?: () => void;
 }) {
+  const body = (
+    <Card className="glass-card h-full transition-shadow hover:shadow-[var(--shadow-card)]">
+      <CardContent className="flex items-center gap-3 p-4">
+        <span className="flex size-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
+          <Icon className="size-5" />
+        </span>
+        <div className="min-w-0">
+          <p className="tabular text-lg font-extrabold leading-tight">{value}</p>
+          <p className="truncate text-[11px] text-muted-foreground">{label}</p>
+          {hint && <p className="truncate text-[11px] text-muted-foreground">{hint}</p>}
+        </div>
+      </CardContent>
+    </Card>
+  );
+
+  if (!onExpand) {
+    return (
+      <Link to={to} className="block">
+        {body}
+      </Link>
+    );
+  }
+
   return (
-    <Link to={to} className="block">
-      <Card className="glass-card transition-shadow hover:shadow-[var(--shadow-card)]">
-        <CardContent className="flex items-center gap-3 p-4">
-          <span className="flex size-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
-            <Icon className="size-5" />
-          </span>
-          <div className="min-w-0">
-            <p className="tabular text-lg font-extrabold leading-tight">{value}</p>
-            <p className="truncate text-[11px] text-muted-foreground">{label}</p>
-            {hint && <p className="truncate text-[11px] text-muted-foreground">{hint}</p>}
-          </div>
-        </CardContent>
-      </Card>
-    </Link>
+    <button
+      type="button"
+      onClick={onExpand}
+      className="block w-full rounded-xl text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      {body}
+    </button>
   );
 }
