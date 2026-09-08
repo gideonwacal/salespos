@@ -225,6 +225,46 @@ export function saleLines(sale: { id: string; items?: unknown[] }): SaleLine[] {
 }
 
 /**
+ * The lines of many sales at once, keyed by sale id.
+ *
+ * saleLines() re-reads the local store on every call, which is fine for the one
+ * sale a cashier is correcting and ruinous across a whole book. The per-item
+ * profit breakdown needs every line there is, so this reads sale_items and
+ * products once and groups them in memory.
+ */
+export function saleLinesBySale(
+  sales: { id: string; items?: unknown[] }[],
+): Map<string, SaleLine[]> {
+  const out = new Map<string, SaleLine[]>();
+
+  if (isServerTable("sales")) {
+    // The API nests the lines on the sale, so nothing here touches the store.
+    for (const sale of sales) {
+      out.set(sale.id, Array.isArray(sale.items) ? saleLines(sale) : []);
+    }
+    return out;
+  }
+
+  const names = new Map(
+    dbSelect<Row>("products").map((p) => [String(p.id), String(p.name ?? "Item")]),
+  );
+  for (const line of dbSelect<Row>("sale_items")) {
+    const saleId = String(line.sale_id ?? "");
+    const productId = String(line.product_id ?? "");
+    const list = out.get(saleId) ?? [];
+    list.push({
+      product_id: productId,
+      product_name: names.get(productId) ?? "Item",
+      quantity: Number(line.quantity ?? 0),
+      unit_price: Number(line.unit_price ?? 0),
+      unit_cost: Number(line.unit_cost ?? 0),
+    });
+    out.set(saleId, list);
+  }
+  return out;
+}
+
+/**
  * Correct a completed sale and move stock to match.
  *
  * On the server this is one transaction: the old lines come off, the new ones

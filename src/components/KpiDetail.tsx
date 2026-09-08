@@ -15,6 +15,7 @@ import {
   type Supplier,
 } from "@/lib/data";
 import { deleteRow, staffUserId, type StaffRow } from "@/lib/db";
+import { profitByCommodity } from "@/lib/profit";
 import { useAuth } from "@/hooks/useAuth";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -157,13 +158,14 @@ export function KpiDetail({
             />
           )}
           {panel === "suppliers" && <SupplierDetail suppliers={suppliers} purchases={purchases} />}
-          {(panel === "outofstock" || panel === "lowstock" || panel === "instock") && (
+          {(panel === "outofstock" || panel === "lowstock") && (
             <ShelfDetail
               products={products}
               movements={movements}
-              mode={panel === "outofstock" ? "out" : panel === "lowstock" ? "low" : "in"}
+              mode={panel === "outofstock" ? "out" : "low"}
             />
           )}
+          {panel === "instock" && <InStockDetail products={products} sales={sales} />}
         </div>
 
         <div className="flex justify-end">
@@ -979,14 +981,13 @@ function SupplierDetail({
 }
 
 /**
- * The three shelf views, sharing one panel.
+ * The two shelf warnings, sharing one panel.
  *
- * "Out of stock", "low stock" and "in stock" are the same question at
- * different depths — what has to be bought, how badly, and what is still
- * there to sell. The rows are the same ones the counter sees on the inventory
- * screen: the item, its category, what is on hand, where it reorders, and the
- * two prices. Each opens onto what it costs to refill and when it last moved,
- * which is what decides whether it is worth reordering at all.
+ * "Out of stock" and "low stock" are the same question at different depths —
+ * what has to be bought, and how badly. The rows carry what the counter sees
+ * on the inventory screen: the item, its category, what is on hand, where it
+ * reorders, and the two prices. Each opens onto what it costs to refill and
+ * when it last moved, which is what decides whether it is worth reordering.
  */
 function ShelfDetail({
   products,
@@ -995,7 +996,7 @@ function ShelfDetail({
 }: {
   products: Product[];
   movements: StockTxn[];
-  mode: "out" | "low" | "in";
+  mode: "out" | "low";
 }) {
   const [openId, setOpenId] = useState<string | null>(null);
 
@@ -1012,12 +1013,10 @@ function ShelfDetail({
     const matching =
       mode === "out"
         ? products.filter((p) => Number(p.stock_quantity) <= 0)
-        : mode === "in"
-          ? products.filter((p) => Number(p.stock_quantity) > 0)
-          : products.filter(
-              (p) =>
-                Number(p.stock_quantity) > 0 && Number(p.stock_quantity) <= Number(p.reorder_level),
-            );
+        : products.filter(
+            (p) =>
+              Number(p.stock_quantity) > 0 && Number(p.stock_quantity) <= Number(p.reorder_level),
+          );
 
     const priced = matching.map((p) => {
       // Refill to the reorder level at least, and never suggest zero.
@@ -1027,13 +1026,11 @@ function ShelfDetail({
         product: p,
         shortfall,
         cost: shortfall * Number(p.unit_buying_price),
-        onHandValue: Number(p.stock_quantity) * Number(p.unit_buying_price),
         moved: lastMoved.get(p.id) ?? null,
       };
     });
 
-    // Refills sort by what they cost; a healthy shelf sorts by what is on it.
-    return priced.sort((a, b) => (mode === "in" ? b.onHandValue - a.onHandValue : b.cost - a.cost));
+    return priced.sort((a, b) => b.cost - a.cost);
   }, [products, mode, lastMoved]);
 
   if (!rows.length) {
@@ -1041,9 +1038,7 @@ function ShelfDetail({
       <p className="py-6 text-center text-sm text-muted-foreground">
         {mode === "out"
           ? "Nothing is out of stock. Every item has something on the shelf."
-          : mode === "in"
-            ? "Nothing is on the shelf — every product has run down to zero."
-            : "Nothing is below its reorder level."}
+          : "Nothing is below its reorder level."}
       </p>
     );
   }
@@ -1052,25 +1047,11 @@ function ShelfDetail({
     <div className="space-y-3">
       <div className="grid gap-2 sm:grid-cols-3">
         <Stat
-          label={
-            mode === "out" ? "Out of stock" : mode === "in" ? "In stock" : "Below reorder level"
-          }
+          label={mode === "out" ? "Out of stock" : "Below reorder level"}
           value={num(rows.length)}
         />
-        {mode === "in" ? (
-          <>
-            <Stat
-              label="Units on hand"
-              value={num(rows.reduce((a, r) => a + Number(r.product.stock_quantity), 0))}
-            />
-            <Stat label="Worth at cost" value={ugx(rows.reduce((a, r) => a + r.onHandValue, 0))} />
-          </>
-        ) : (
-          <>
-            <Stat label="Units to buy" value={num(rows.reduce((a, r) => a + r.shortfall, 0))} />
-            <Stat label="Cost to refill" value={ugx(rows.reduce((a, r) => a + r.cost, 0))} />
-          </>
-        )}
+        <Stat label="Units to buy" value={num(rows.reduce((a, r) => a + r.shortfall, 0))} />
+        <Stat label="Cost to refill" value={ugx(rows.reduce((a, r) => a + r.cost, 0))} />
       </div>
 
       <Table>
@@ -1081,11 +1062,11 @@ function ShelfDetail({
             <TableHead className="text-right">Reorder at</TableHead>
             <TableHead className="text-right">Buys at</TableHead>
             <TableHead className="text-right">Sells at</TableHead>
-            <TableHead className="text-right">{mode === "in" ? "Value" : "To buy"}</TableHead>
+            <TableHead className="text-right">To buy</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
-          {rows.map(({ product: p, shortfall, cost, onHandValue, moved }) => {
+          {rows.map(({ product: p, shortfall, cost, moved }) => {
             const isOpen = openId === p.id;
             return (
               <Fragment key={p.id}>
@@ -1118,9 +1099,7 @@ function ShelfDetail({
                   <TableCell className="tabular text-right text-muted-foreground">
                     {ugx(p.unit_selling_price)}
                   </TableCell>
-                  <TableCell className="tabular text-right">
-                    {mode === "in" ? ugx(onHandValue) : num(shortfall)}
-                  </TableCell>
+                  <TableCell className="tabular text-right">{num(shortfall)}</TableCell>
                 </TableRow>
                 {isOpen && (
                   <TableRow className="bg-muted/40 hover:bg-muted/40">
@@ -1151,39 +1130,161 @@ function ShelfDetail({
   );
 }
 
+/**
+ * Every commodity on the shelf, with gross profit against each one.
+ *
+ * Two figures sit side by side and are never added together. "Earned" is
+ * revenue less the buying price of the units that actually sold — the gross
+ * profit in the statement, split per item. "In stock" is what the units still
+ * on the shelf would make at the list price, less what they cost to buy: money
+ * the store is holding, not money it has made.
+ */
+function InStockDetail({ products, sales }: { products: Product[]; sales: Sale[] }) {
+  const [openId, setOpenId] = useState<string | null>(null);
+
+  const { rows, stockProfit, stockRetail, stockCost, earned } = useMemo(() => {
+    const report = profitByCommodity(products, sales);
+    const onShelf = report.rows.filter((r) => r.onHand > 0);
+    return {
+      rows: [...onShelf].sort((a, b) => b.stockProfit - a.stockProfit),
+      stockProfit: onShelf.reduce((a, r) => a + r.stockProfit, 0),
+      stockRetail: onShelf.reduce((a, r) => a + r.stockRetail, 0),
+      stockCost: onShelf.reduce((a, r) => a + r.stockCost, 0),
+      earned: onShelf.reduce((a, r) => a + r.earned, 0),
+    };
+  }, [products, sales]);
+
+  if (!rows.length) {
+    return (
+      <p className="py-6 text-center text-sm text-muted-foreground">
+        Nothing is on the shelf — every product has run down to zero.
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="grid gap-2 sm:grid-cols-3">
+        <Stat label="Commodities in stock" value={num(rows.length)} />
+        <Stat label="Profit held in stock" value={ugx(stockProfit)} />
+        <Stat label="Earned by these items" value={ugx(earned)} />
+      </div>
+
+      <p className="text-xs text-muted-foreground">
+        Profit held in stock is {ugx(stockRetail)} at the selling price less {ugx(stockCost)} at the
+        buying price — what the shelf would make if it all sold. It has not been earned, so it is
+        never added to the {ugx(earned)} these items have already made on the sales on file. Tap an
+        item for its figures.
+      </p>
+
+      <div className="overflow-x-auto">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Item</TableHead>
+              <TableHead className="text-right">On hand</TableHead>
+              <TableHead className="text-right">Buys at</TableHead>
+              <TableHead className="text-right">Sells at</TableHead>
+              <TableHead className="text-right">In stock</TableHead>
+              <TableHead className="text-right">Earned</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {rows.map((r) => {
+              const isOpen = openId === r.productId;
+              const p = r.product;
+              return (
+                <Fragment key={r.productId}>
+                  <TableRow
+                    className="cursor-pointer"
+                    onClick={() => setOpenId(isOpen ? null : r.productId)}
+                  >
+                    <TableCell className="font-medium">
+                      <span className="flex items-center gap-1.5">
+                        <ChevronRight
+                          className={`size-3.5 transition-transform ${isOpen ? "rotate-90" : ""}`}
+                        />
+                        {r.name}
+                      </span>
+                      <span className="ml-5 text-[11px] text-muted-foreground">{r.category}</span>
+                    </TableCell>
+                    <TableCell className="tabular text-right font-semibold">
+                      {num(r.onHand)}
+                    </TableCell>
+                    <TableCell className="tabular text-right text-muted-foreground">
+                      {ugx(p?.unit_buying_price ?? 0)}
+                    </TableCell>
+                    <TableCell className="tabular text-right text-muted-foreground">
+                      {ugx(p?.unit_selling_price ?? 0)}
+                    </TableCell>
+                    <TableCell
+                      className={`tabular text-right font-semibold ${
+                        r.stockProfit < 0 ? "text-destructive" : ""
+                      }`}
+                    >
+                      {ugx(r.stockProfit)}
+                    </TableCell>
+                    <TableCell
+                      className={`tabular text-right ${r.earned > 0 ? "text-success" : "text-muted-foreground"}`}
+                    >
+                      {r.soldQty > 0 ? ugx(r.earned) : "—"}
+                    </TableCell>
+                  </TableRow>
+                  {isOpen && (
+                    <TableRow className="bg-muted/40 hover:bg-muted/40">
+                      <TableCell colSpan={6} className="p-3">
+                        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                          <Fact label="On the shelf at retail" value={ugx(r.stockRetail)} />
+                          <Fact label="On the shelf at buying price" value={ugx(r.stockCost)} />
+                          <Fact label="Profit held in stock" value={ugx(r.stockProfit)} />
+                          <Fact label="Reorder at" value={num(p?.reorder_level ?? 0)} />
+                          <Fact label="Units sold" value={num(r.soldQty)} />
+                          <Fact label="Revenue earned" value={ugx(r.revenue)} />
+                          <Fact label="Buying price of those units" value={ugx(r.buyingPrice)} />
+                          <Fact label="Gross profit earned" value={ugx(r.earned)} />
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </Fragment>
+              );
+            })}
+          </TableBody>
+        </Table>
+      </div>
+    </div>
+  );
+}
+
 function StockDetail({ products }: { products: Product[] }) {
   if (!products.length) return <Empty what="stock" />;
 
   const rows = products
-    .map((p) => ({
-      p,
-      cost: Number(p.unit_buying_price) * Number(p.stock_quantity),
-      retail: Number(p.unit_selling_price) * Number(p.stock_quantity),
-    }))
+    .map((p) => {
+      const cost = Number(p.unit_buying_price) * Number(p.stock_quantity);
+      const retail = Number(p.unit_selling_price) * Number(p.stock_quantity);
+      // What the shelf would make at the list price. Not earned, and never
+      // added to the gross profit the shop has actually taken.
+      return { p, cost, retail, profit: retail - cost };
+    })
     .sort((a, b) => b.cost - a.cost)
     .slice(0, 20);
 
+  const totals = products.reduce(
+    (acc, p) => {
+      acc.cost += Number(p.unit_buying_price) * Number(p.stock_quantity);
+      acc.retail += Number(p.unit_selling_price) * Number(p.stock_quantity);
+      return acc;
+    },
+    { cost: 0, retail: 0 },
+  );
+
   return (
     <div className="space-y-4">
-      <div className="grid gap-2 sm:grid-cols-2">
-        <Stat
-          label="At cost"
-          value={ugx(
-            products.reduce(
-              (a, p) => a + Number(p.unit_buying_price) * Number(p.stock_quantity),
-              0,
-            ),
-          )}
-        />
-        <Stat
-          label="At retail"
-          value={ugx(
-            products.reduce(
-              (a, p) => a + Number(p.unit_selling_price) * Number(p.stock_quantity),
-              0,
-            ),
-          )}
-        />
+      <div className="grid gap-2 sm:grid-cols-3">
+        <Stat label="At buying price" value={ugx(totals.cost)} />
+        <Stat label="At retail" value={ugx(totals.retail)} />
+        <Stat label="Profit held in stock" value={ugx(totals.retail - totals.cost)} />
       </div>
 
       <Table>
@@ -1191,18 +1292,24 @@ function StockDetail({ products }: { products: Product[] }) {
           <TableRow>
             <TableHead>Item</TableHead>
             <TableHead className="text-right">Qty</TableHead>
-            <TableHead className="text-right">At cost</TableHead>
+            <TableHead className="text-right">At buying price</TableHead>
             <TableHead className="text-right">At retail</TableHead>
+            <TableHead className="text-right">Profit in stock</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
-          {rows.map(({ p, cost, retail }) => (
+          {rows.map(({ p, cost, retail, profit }) => (
             <TableRow key={p.id}>
               <TableCell className="font-medium">{p.name}</TableCell>
               <TableCell className="text-right">{num(p.stock_quantity)}</TableCell>
               <Money>{ugx(cost)}</Money>
               <TableCell className="tabular text-right text-muted-foreground">
                 {ugx(retail)}
+              </TableCell>
+              <TableCell
+                className={`tabular text-right font-semibold ${profit < 0 ? "text-destructive" : ""}`}
+              >
+                {ugx(profit)}
               </TableCell>
             </TableRow>
           ))}
