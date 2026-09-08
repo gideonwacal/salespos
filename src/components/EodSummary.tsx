@@ -70,7 +70,7 @@ export function EodSummaryDialog() {
             <Row key={m} label={`— ${paymentLabel(m)}`} value={ugx(v)} muted />
           ))}
           <Row label="Debts collected today" value={ugx(collected)} />
-          <Row label="Expenses paid today" value={`-${ugx(spend)}`} />
+          <Row label="Operating overheads paid today" value={`-${ugx(spend)}`} />
           <Row label="Gross profit" value={ugx(gross - cost)} strong />
           <div className="my-2 border-t border-dashed border-border" />
           <Row label="Outstanding debtor balance" value={ugx(outstandingTotal)} />

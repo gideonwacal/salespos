@@ -75,6 +75,9 @@ export type Expense = {
 export type StockTxn = {
   id: string;
   product_id: string;
+  /** Named by the API so a movement still says what moved when the product
+   * row is not to hand — a deleted item, or a list loaded before it. */
+  product_name?: string | null;
   type: string;
   quantity: number;
   notes: string;

@@ -105,10 +105,17 @@ function Dashboard() {
     const monthSales = sales.filter((s) => isThisMonth(s.created_at));
     const monthExpenses = expenses.filter((e) => isThisMonth(e.expense_date));
 
-    const totalSales = sum(sales.map((s) => Number(s.total_amount)));
+    // Cash and credit are two different questions, and the dashboard now asks
+    // them on two different tiles: what came into the till, and what went out
+    // on trust. Anything not taken on credit counted as money received.
+    const isCash = (s: (typeof sales)[number]) => s.payment_method !== "credit";
+    const cashSales = sum(sales.filter(isCash).map((s) => Number(s.total_amount)));
+    const monthCash = sum(monthSales.filter(isCash).map((s) => Number(s.total_amount)));
     const todayTotal = sum(todaySales.map((s) => Number(s.total_amount)));
     const monthTotal = sum(monthSales.map((s) => Number(s.total_amount)));
-    const cogs = sum(monthSales.map((s) => Number(s.total_cost)));
+    // Every shilling of stock sold this month at what it cost to buy. Gross
+    // profit is revenue less this, and nothing else.
+    const buyingPrice = sum(monthSales.map((s) => Number(s.total_cost)));
     const overheads = sum(monthExpenses.map((e) => Number(e.amount)));
     const creditSales = sum(
       sales.filter((s) => s.payment_method === "credit").map((s) => Number(s.total_amount)),
@@ -148,13 +155,15 @@ function Dashboard() {
     });
 
     return {
-      totalSales,
+      cashSales,
+      monthCash,
       todayTotal,
       todayCount: todaySales.length,
       monthTotal,
       monthCount: monthSales.length,
-      grossProfit: monthTotal - cogs,
-      netIncome: monthTotal - cogs - overheads,
+      grossProfit: monthTotal - buyingPrice,
+      // Net profit is gross profit less the overheads, everywhere in the app.
+      netProfit: monthTotal - buyingPrice - overheads,
       overheads,
       expensesTotal: sum(expenses.map((e) => Number(e.amount))),
       creditSales,
@@ -221,9 +230,9 @@ function Dashboard() {
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Kpi
           icon={TrendingUp}
-          label="Total sales"
-          value={ugx(m.totalSales)}
-          hint={`${ugx(m.monthTotal)} this month`}
+          label="Cash sales"
+          value={ugx(m.cashSales)}
+          hint={`${ugx(m.monthCash)} this month · credit is its own tile`}
           tone="primary"
           onExpand={() => setPanel("sales")}
         />
@@ -237,7 +246,7 @@ function Dashboard() {
         />
         <Kpi
           icon={Receipt}
-          label="Total expenses"
+          label="Operating overheads"
           value={ugx(m.expensesTotal)}
           hint={`${ugx(m.overheads)} this month`}
           tone="destructive"
@@ -260,13 +269,28 @@ function Dashboard() {
           <Mini label="Sales" value={ugx(m.monthTotal)} sub={`${m.monthCount} this month`} />
           <Mini label="Credit sales" value={ugx(m.creditSales)} sub={`${m.overdueCount} overdue`} />
           <Mini label="Purchases" value={ugx(m.purchasesTotal)} sub={`${ugx(m.supplierDue)} due`} />
-          <Mini label="Products in stock" value={num(m.inStock)} sub={`${products.length} total`} />
-          <Mini label="Out of stock" value={num(m.outOfStock.length)} sub="Needs restocking" />
-          <Mini label="Low stock items" value={num(m.lowStock.length)} sub="Below reorder level" />
           <Mini
-            label="Net income"
-            value={ugx(m.netIncome)}
-            sub={`Gross ${ugx(m.grossProfit)}`}
+            label="Products in stock"
+            value={num(m.inStock)}
+            sub={`${products.length} total`}
+            onExpand={() => setPanel("instock")}
+          />
+          <Mini
+            label="Out of stock"
+            value={num(m.outOfStock.length)}
+            sub="Needs restocking"
+            onExpand={() => setPanel("outofstock")}
+          />
+          <Mini
+            label="Low stock items"
+            value={num(m.lowStock.length)}
+            sub="Below reorder level"
+            onExpand={() => setPanel("lowstock")}
+          />
+          <Mini
+            label="Gross profit"
+            value={ugx(m.grossProfit)}
+            sub={`Sales less buying price · net ${ugx(m.netProfit)}`}
             accent
           />
         </div>
@@ -348,11 +372,11 @@ function Dashboard() {
               <CalendarClock className="size-4" /> Expiry watchlist
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-2 text-sm">
+          <CardContent className="max-h-72 space-y-2 overflow-y-auto text-sm">
             {m.expiring.length === 0 && (
               <p className="text-muted-foreground">Nothing expiring in the next 30 days.</p>
             )}
-            {m.expiring.slice(0, 6).map(({ p, d }) => (
+            {m.expiring.map(({ p, d }) => (
               <div key={p.id} className="flex items-center justify-between gap-2">
                 <span className="truncate">{p.name}</span>
                 <Badge
@@ -377,7 +401,7 @@ function Dashboard() {
               <ShoppingCart className="size-4" /> Recent sales
             </CardTitle>
           </CardHeader>
-          <CardContent className="overflow-x-auto p-0">
+          <CardContent className="max-h-96 overflow-auto p-0">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -389,7 +413,7 @@ function Dashboard() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {sales.slice(0, 8).map((s) => (
+                {sales.slice(0, 40).map((s) => (
                   <TableRow key={s.id}>
                     <TableCell className="whitespace-nowrap">{timeAgo(s.created_at)}</TableCell>
                     <TableCell>{s.customer_name ?? "Walk-in"}</TableCell>
@@ -432,12 +456,15 @@ function Dashboard() {
               </span>
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-2 text-sm">
-            {movements.slice(0, 7).map((t) => {
+          <CardContent className="max-h-72 space-y-2 overflow-y-auto text-sm">
+            {movements.slice(0, 40).map((t) => {
+              // Name the item that moved. The product list is the first place to
+              // look; the API sends the name alongside the movement, which is
+              // what still answers "what was bought?" once an item is deleted.
               const p = products.find((x) => x.id === t.product_id);
               return (
                 <div key={t.id} className="flex items-center justify-between gap-2">
-                  <span className="truncate">{p?.name ?? "Product"}</span>
+                  <span className="truncate">{p?.name ?? t.product_name ?? "Unknown product"}</span>
                   <span className="tabular text-xs text-muted-foreground">
                     {t.type.replace("_", " ")} · {num(t.quantity)}
                   </span>
@@ -548,24 +575,49 @@ function Mini({
   value,
   sub,
   accent,
+  onExpand,
 }: {
   label: string;
   value: string;
   sub: string;
   accent?: boolean;
+  /** When given, the tile opens the same list of items the counter works off. */
+  onExpand?: () => void;
 }) {
-  return (
-    <Card className={accent ? "glass-card border-success/40" : "glass-card"}>
-      <CardContent className="p-4">
-        <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-          {label}
-        </p>
-        <p className={`tabular truncate text-lg font-extrabold ${accent ? "text-success" : ""}`}>
-          {value}
-        </p>
-        <p className="truncate text-[11px] text-muted-foreground">{sub}</p>
-      </CardContent>
+  const body = (
+    <CardContent className="p-4">
+      <p className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+        {label}
+        {onExpand && <ChevronDown className="size-3 shrink-0" aria-hidden="true" />}
+      </p>
+      <p className={`tabular truncate text-lg font-extrabold ${accent ? "text-success" : ""}`}>
+        {value}
+      </p>
+      <p className="truncate text-[11px] text-muted-foreground">{sub}</p>
+    </CardContent>
+  );
+
+  const card = (
+    <Card
+      className={`${accent ? "glass-card border-success/40" : "glass-card"} ${
+        onExpand ? "h-full transition-shadow hover:shadow-[var(--shadow-card)]" : ""
+      }`}
+    >
+      {body}
     </Card>
+  );
+
+  if (!onExpand) return card;
+
+  return (
+    <button
+      type="button"
+      onClick={onExpand}
+      aria-label={`${label}: show the items behind this figure`}
+      className="block w-full rounded-xl text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      {card}
+    </button>
   );
 }
 

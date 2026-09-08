@@ -200,7 +200,8 @@ export function StaffInventoryLog({
     return [...map.values()].sort((a, b) => b.value - a.value);
   }, [entries]);
 
-  const recent = entries.slice(0, 4);
+  // The card scrolls, so the preview is a real list rather than a teaser.
+  const recent = entries.slice(0, 30);
 
   return (
     <>
@@ -228,7 +229,7 @@ export function StaffInventoryLog({
             {num(byPerson.length)} {byPerson.length === 1 ? "person" : "people"}
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-1.5 text-sm">
+        <CardContent className="max-h-60 space-y-1.5 overflow-y-auto text-sm">
           {recent.map((e) => (
             <div key={e.id} className="flex items-center justify-between gap-2">
               <span className="truncate">{e.product}</span>

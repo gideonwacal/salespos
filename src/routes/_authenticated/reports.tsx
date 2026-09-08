@@ -45,7 +45,9 @@ function Reports() {
     const s = sales.filter((x) => inRange(x.created_at));
     const e = expenses.filter((x) => inRange(x.expense_date));
     const revenue = s.reduce((a, x) => a + Number(x.total_amount), 0);
-    const cogs = s.reduce((a, x) => a + Number(x.total_cost), 0);
+    // What the stock sold in this period cost to buy. Gross profit is the
+    // revenue less this and nothing else; overheads come off after it.
+    const buyingPrice = s.reduce((a, x) => a + Number(x.total_cost), 0);
     const overheads = e.reduce((a, x) => a + Number(x.amount), 0);
     const byMethod = PAYMENT_METHODS.map((m) => ({
       label: m.label,
@@ -53,14 +55,16 @@ function Reports() {
         .filter((x) => x.payment_method === m.value)
         .reduce((a, x) => a + Number(x.total_amount), 0),
     })).filter((r) => r.total > 0);
+    const gross = revenue - buyingPrice;
     return {
       s,
       e,
       revenue,
-      cogs,
-      gross: revenue - cogs,
+      buyingPrice,
+      gross,
       overheads,
-      net: revenue - cogs - overheads,
+      // Net profit is gross profit less the operating overheads.
+      net: gross - overheads,
       byMethod,
     };
   }, [sales, expenses, from, to]);
@@ -105,7 +109,7 @@ function Reports() {
           </CardHeader>
           <CardContent className="space-y-2 text-sm">
             <Row label="Gross revenue" value={ugx(report.revenue)} />
-            <Row label="Cost of goods sold" value={`- ${ugx(report.cogs)}`} />
+            <Row label="Buying price" value={`- ${ugx(report.buyingPrice)}`} />
             <Row label="Gross profit" value={ugx(report.gross)} strong />
             <Row label="Operating overheads" value={`- ${ugx(report.overheads)}`} />
             <div className="flex items-center justify-between rounded-lg bg-success-soft px-3 py-2">

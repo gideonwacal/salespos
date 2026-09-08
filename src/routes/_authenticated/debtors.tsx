@@ -10,6 +10,7 @@ import {
   debtStatus,
   outstanding,
   type Debt,
+  type DebtStatus,
 } from "@/lib/data";
 import { insertRows } from "@/lib/db";
 import { useAuth } from "@/hooks/useAuth";
@@ -147,6 +148,7 @@ function DebtorsPage() {
                     <TableHead>Items</TableHead>
                     <TableHead className="text-right">Total</TableHead>
                     <TableHead className="text-right">Balance</TableHead>
+                    <TableHead>Taken</TableHead>
                     <TableHead>Due</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead />
@@ -168,6 +170,7 @@ function DebtorsPage() {
                         <TableCell className="tabular text-right font-semibold">
                           {ugx(d.balance)}
                         </TableCell>
+                        <TableCell className="text-xs">{shortDate(d.issue_date)}</TableCell>
                         <TableCell className="text-xs">{shortDate(d.due_date)}</TableCell>
                         <TableCell>
                           <Badge className={cn("border-0", DEBT_STATUS[d.live].className)}>
@@ -189,7 +192,7 @@ function DebtorsPage() {
                   })}
                   {rows.length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={7} className="py-8 text-center text-sm text-muted-foreground">
+                      <TableCell colSpan={8} className="py-8 text-center text-sm text-muted-foreground">
                         No credit sales recorded yet.
                       </TableCell>
                     </TableRow>
@@ -288,6 +291,16 @@ function Stat({ label, value, tone }: { label: string; value: string; tone: stri
   );
 }
 
+const TODAY = () => new Date().toISOString().slice(0, 10);
+
+/**
+ * The counter's credit form.
+ *
+ * Three things the owner asks about every debt are filled in here rather than
+ * inferred: the day the goods actually left the shop, the day payment falls
+ * due, and where the account stands. All three go onto the debt row, so the
+ * owner's dashboard shows what the person at the counter wrote, not a guess.
+ */
 function NewDebtDialog() {
   const queryClient = useQueryClient();
   const { data: customers = [] } = useCustomers();
@@ -295,6 +308,9 @@ function NewDebtDialog() {
   const [customerId, setCustomerId] = useState("");
   const [items, setItems] = useState("");
   const [value, setValue] = useState("");
+  const [paid, setPaid] = useState("");
+  const [taken, setTaken] = useState(TODAY);
+  const [status, setStatus] = useState<DebtStatus>("pending");
   const [due, setDue] = useState(() => {
     const d = new Date();
     d.setDate(d.getDate() + 14);
@@ -304,21 +320,31 @@ function NewDebtDialog() {
   const save = async () => {
     if (!customerId) return toast.error("Pick a customer");
     if (!Number(value)) return toast.error("Enter the credit amount");
+    if (!taken) return toast.error("Enter the date the goods were taken");
+    if (!due) return toast.error("Enter the date payment falls due");
+    if (due < taken) return toast.error("The due date cannot fall before the goods were taken");
+    const down = Number(paid) || 0;
+    if (down < 0 || down > Number(value)) {
+      return toast.error("Amount already paid cannot be more than the credit");
+    }
     try {
       await insertRows("debts", {
         customer_id: customerId,
         sale_id: null,
         items_summary: items.trim() || "Manual credit entry",
         total_value: Number(value),
-        amount_paid: 0,
-        issue_date: new Date().toISOString().slice(0, 10),
+        amount_paid: down,
+        issue_date: taken,
         due_date: due,
-        status: "pending",
+        status,
       });
       toast.success("Credit recorded");
       setOpen(false);
       setItems("");
       setValue("");
+      setPaid("");
+      setTaken(TODAY());
+      setStatus("pending");
       queryClient.invalidateQueries();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not record credit");
@@ -356,13 +382,57 @@ function NewDebtDialog() {
             <Label>Items</Label>
             <Input value={items} onChange={(e) => setItems(e.target.value)} maxLength={300} />
           </div>
-          <div className="space-y-1.5">
-            <Label>Total value (UGX)</Label>
-            <Input type="number" value={value} onChange={(e) => setValue(e.target.value)} />
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label>Total value (UGX)</Label>
+              <Input type="number" value={value} onChange={(e) => setValue(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Already paid (UGX)</Label>
+              <Input
+                type="number"
+                placeholder="0"
+                value={paid}
+                onChange={(e) => setPaid(e.target.value)}
+              />
+            </div>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label>Date taken</Label>
+              <Input
+                type="date"
+                value={taken}
+                max={TODAY()}
+                onChange={(e) => setTaken(e.target.value)}
+              />
+              <p className="text-[11px] text-muted-foreground">The day the goods left the shop.</p>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Payment due date</Label>
+              <Input type="date" value={due} min={taken} onChange={(e) => setDue(e.target.value)} />
+              <p className="text-[11px] text-muted-foreground">
+                The day the customer promised to pay.
+              </p>
+            </div>
           </div>
           <div className="space-y-1.5">
-            <Label>Due date</Label>
-            <Input type="date" value={due} onChange={(e) => setDue(e.target.value)} />
+            <Label>Status</Label>
+            <Select value={status} onValueChange={(v) => setStatus(v as DebtStatus)}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {(["pending", "partially_paid", "overdue", "cleared"] as const).map((v) => (
+                  <SelectItem key={v} value={v}>
+                    {DEBT_STATUS[v].label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-[11px] text-muted-foreground">
+              Where the account stands today. The owner sees this on their dashboard.
+            </p>
           </div>
           <Button className="w-full" onClick={save}>
             Save credit

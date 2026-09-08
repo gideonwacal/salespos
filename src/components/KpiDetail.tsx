@@ -18,7 +18,7 @@ import { deleteRow, staffUserId, type StaffRow } from "@/lib/db";
 import { useAuth } from "@/hooks/useAuth";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ugx, num, shortDate, paymentLabel } from "@/lib/format";
+import { ugx, num, shortDate, paymentLabel, DEBT_STATUS } from "@/lib/format";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -46,6 +46,7 @@ export type KpiPanel =
   | "suppliers"
   | "outofstock"
   | "lowstock"
+  | "instock"
   | null;
 
 /**
@@ -111,14 +112,15 @@ export function KpiDetail({
   };
 
   const title = {
-    sales: "Sales breakdown",
+    sales: "Cash sales breakdown",
     credit: "Credit & outstanding balances",
-    expenses: "Expenses breakdown",
+    expenses: "Operating overheads breakdown",
     stock: "Stock value by item",
     customers: "Customers",
     suppliers: "Suppliers",
     outofstock: "Stopped & out-of-stock products",
     lowstock: "Low stock products",
+    instock: "Products in stock",
     "": "",
   }[panel ?? ""];
 
@@ -131,6 +133,7 @@ export function KpiDetail({
     suppliers: { to: "/stock", label: "Open suppliers" },
     outofstock: { to: "/inventory", label: "Open inventory" },
     lowstock: { to: "/inventory", label: "Open inventory" },
+    instock: { to: "/inventory", label: "Open inventory" },
   }[panel ?? "sales"];
 
   return (
@@ -142,7 +145,7 @@ export function KpiDetail({
 
         <div className="max-h-[60vh] overflow-y-auto">
           {panel === "expenses" && <ExpenseDetail expenses={expenses} staff={staff} />}
-          {panel === "sales" && <SalesDetail sales={sales} debts={debts} />}
+          {panel === "sales" && <SalesDetail sales={sales} />}
           {panel === "credit" && <CreditDetail debts={debts} customers={customers} />}
           {panel === "stock" && <StockDetail products={products} />}
           {panel === "customers" && (
@@ -154,11 +157,11 @@ export function KpiDetail({
             />
           )}
           {panel === "suppliers" && <SupplierDetail suppliers={suppliers} purchases={purchases} />}
-          {(panel === "outofstock" || panel === "lowstock") && (
+          {(panel === "outofstock" || panel === "lowstock" || panel === "instock") && (
             <ShelfDetail
               products={products}
               movements={movements}
-              mode={panel === "outofstock" ? "out" : "low"}
+              mode={panel === "outofstock" ? "out" : panel === "lowstock" ? "low" : "in"}
             />
           )}
         </div>
@@ -377,58 +380,39 @@ function ExpenseDetail({ expenses, staff }: { expenses: Expense[]; staff: StaffR
   );
 }
 
-function SalesDetail({ sales, debts }: { sales: Sale[]; debts: Debt[] }) {
-  // Credit is the half of "total sales" that has not been paid for. Showing
-  // the two together is the point: a record month on paper can be a month
-  // where nothing came into the till.
-  const credit = useMemo(() => {
-    const onCredit = sales.filter((s) => s.payment_method === "credit");
-    return {
-      count: onCredit.length,
-      value: onCredit.reduce((a, s) => a + Number(s.total_amount), 0),
-      owed: debts.reduce((a, d) => a + outstanding(d), 0),
-      overdue: debts
-        .filter((d) => debtStatus(d) === "overdue")
-        .reduce((a, d) => a + outstanding(d), 0),
-    };
-  }, [sales, debts]);
+/**
+ * The money that actually came into the till.
+ *
+ * Credit has its own tile and its own panel, so it is left out of this one
+ * entirely — the totals, the payment methods and the recent rows are all
+ * cash-basis. A shop looking at this is asking "what did I take?", and a sale
+ * booked on trust is not an answer to that question.
+ */
+function SalesDetail({ sales }: { sales: Sale[] }) {
+  const cash = useMemo(() => sales.filter((s) => s.payment_method !== "credit"), [sales]);
 
   const byPayment = useMemo(() => {
     const map = new Map<string, { total: number; count: number }>();
-    for (const s of sales) {
+    for (const s of cash) {
       const row = map.get(s.payment_method) ?? { total: 0, count: 0 };
       row.total += Number(s.total_amount);
       row.count += 1;
       map.set(s.payment_method, row);
     }
     return [...map.entries()].sort((a, b) => b[1].total - a[1].total);
-  }, [sales]);
+  }, [cash]);
 
-  if (!sales.length) return <Empty what="sales" />;
+  if (!cash.length) return <Empty what="cash sales" />;
 
-  const recent = [...sales]
-    .sort((a, b) => b.created_at.localeCompare(a.created_at))
-    .slice(0, 15);
-  const profit = sales.reduce(
-    (a, s) => a + (Number(s.total_amount) - Number(s.total_cost)),
-    0,
-  );
+  const recent = [...cash].sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, 15);
+  const profit = cash.reduce((a, s) => a + (Number(s.total_amount) - Number(s.total_cost)), 0);
 
   return (
     <div className="space-y-4">
       <div className="grid gap-2 sm:grid-cols-3">
-        <Stat label="Sales" value={num(sales.length)} />
-        <Stat
-          label="Revenue"
-          value={ugx(sales.reduce((a, s) => a + Number(s.total_amount), 0))}
-        />
+        <Stat label="Cash sales" value={num(cash.length)} />
+        <Stat label="Revenue" value={ugx(cash.reduce((a, s) => a + Number(s.total_amount), 0))} />
         <Stat label="Gross profit" value={ugx(profit)} />
-      </div>
-
-      <div className="grid gap-2 rounded-lg border border-warning/40 bg-warning-soft/40 p-2 sm:grid-cols-3">
-        <Stat label={`Credit sales (${num(credit.count)})`} value={ugx(credit.value)} />
-        <Stat label="Still owed" value={ugx(credit.owed)} />
-        <Stat label="Of which overdue" value={ugx(credit.overdue)} />
       </div>
 
       <section>
@@ -457,7 +441,7 @@ function SalesDetail({ sales, debts }: { sales: Sale[]; debts: Debt[] }) {
 
       <section>
         <h3 className="mb-1 text-xs font-bold uppercase tracking-wide text-muted-foreground">
-          Most recent
+          Most recent cash sales
         </h3>
         <Table>
           <TableHeader>
@@ -472,9 +456,7 @@ function SalesDetail({ sales, debts }: { sales: Sale[]; debts: Debt[] }) {
             {recent.map((s) => (
               <TableRow key={s.id}>
                 <TableCell>{shortDate(s.created_at)}</TableCell>
-                <TableCell className="font-medium">
-                  {s.customer_name || "Walk-in"}
-                </TableCell>
+                <TableCell className="font-medium">{s.customer_name || "Walk-in"}</TableCell>
                 <TableCell>{paymentLabel(s.payment_method)}</TableCell>
                 <Money>{ugx(s.total_amount)}</Money>
               </TableRow>
@@ -505,12 +487,19 @@ function CreditDetail({ debts, customers }: { debts: Debt[]; customers: Customer
         );
         const overdue = theirs.filter((d) => debtStatus(d) === "overdue");
         const dues = theirs.map((d) => d.due_date).sort();
+        // When the goods actually left the shop — the counter records it on the
+        // credit form, and it is the date the owner counts the days from.
+        const taken = theirs
+          .map((d) => d.issue_date)
+          .filter(Boolean)
+          .sort();
         return {
           customer,
           debts: theirs,
           balance: theirs.reduce((a, d) => a + outstanding(d), 0),
           overdueValue: overdue.reduce((a, d) => a + outstanding(d), 0),
           nextDue: dues[0] ?? null,
+          takenOn: taken[0] ?? null,
         };
       })
       .filter((row) => row.debts.length > 0)
@@ -536,6 +525,7 @@ function CreditDetail({ debts, customers }: { debts: Debt[]; customers: Customer
         <TableHeader>
           <TableRow>
             <TableHead>Creditor</TableHead>
+            <TableHead>Taken on</TableHead>
             <TableHead>Next due</TableHead>
             <TableHead>Status</TableHead>
             <TableHead className="text-right">Owed</TableHead>
@@ -562,6 +552,7 @@ function CreditDetail({ debts, customers }: { debts: Debt[]; customers: Customer
                       {c.phone || "No contact"} · {row.debts.length} open
                     </span>
                   </TableCell>
+                  <TableCell>{row.takenOn ? shortDate(row.takenOn) : "—"}</TableCell>
                   <TableCell>{row.nextDue ? shortDate(row.nextDue) : "—"}</TableCell>
                   <TableCell>
                     <Badge
@@ -576,7 +567,7 @@ function CreditDetail({ debts, customers }: { debts: Debt[]; customers: Customer
 
                 {isOpen && (
                   <TableRow className="bg-muted/40 hover:bg-muted/40">
-                    <TableCell colSpan={4} className="p-3">
+                    <TableCell colSpan={5} className="p-3">
                       <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
                         <Fact label="Phone" value={c.phone} />
                         <Fact label="Other phone" value={c.alt_phone} />
@@ -597,9 +588,16 @@ function CreditDetail({ debts, customers }: { debts: Debt[]; customers: Customer
                           <li key={d.id} className="flex items-center justify-between gap-3">
                             <span className="truncate text-muted-foreground">
                               {d.items_summary || "Credit"}
+                              {/* What the counter marked on the form. The badge
+                                  in the row above carries the live position;
+                                  this is the person's own reading of it. */}
+                              <span className="ml-1 text-[10px] uppercase tracking-wide">
+                                · {DEBT_STATUS[d.status]?.label ?? d.status}
+                              </span>
                             </span>
                             <span className="shrink-0 tabular">
-                              {ugx(outstanding(d))} · due {shortDate(d.due_date)}
+                              {ugx(outstanding(d))} · taken {shortDate(d.issue_date)} · due{" "}
+                              {shortDate(d.due_date)}
                             </span>
                           </li>
                         ))}
@@ -614,7 +612,7 @@ function CreditDetail({ debts, customers }: { debts: Debt[]; customers: Customer
           })}
           {creditors.length === 0 && (
             <TableRow>
-              <TableCell colSpan={4} className="py-6 text-center text-muted-foreground">
+              <TableCell colSpan={5} className="py-6 text-center text-muted-foreground">
                 Every credit account is settled.
               </TableCell>
             </TableRow>
@@ -981,12 +979,14 @@ function SupplierDetail({
 }
 
 /**
- * The two shelf warnings, sharing one panel.
+ * The three shelf views, sharing one panel.
  *
- * "Out of stock" and "low stock" are the same question at different depths —
- * what has to be bought, and how badly. Each row opens onto what it costs to
- * refill and when the item last moved, which is what decides whether it is
- * worth reordering at all.
+ * "Out of stock", "low stock" and "in stock" are the same question at
+ * different depths — what has to be bought, how badly, and what is still
+ * there to sell. The rows are the same ones the counter sees on the inventory
+ * screen: the item, its category, what is on hand, where it reorders, and the
+ * two prices. Each opens onto what it costs to refill and when it last moved,
+ * which is what decides whether it is worth reordering at all.
  */
 function ShelfDetail({
   products,
@@ -995,7 +995,7 @@ function ShelfDetail({
 }: {
   products: Product[];
   movements: StockTxn[];
-  mode: "out" | "low";
+  mode: "out" | "low" | "in";
 }) {
   const [openId, setOpenId] = useState<string | null>(null);
 
@@ -1012,24 +1012,28 @@ function ShelfDetail({
     const matching =
       mode === "out"
         ? products.filter((p) => Number(p.stock_quantity) <= 0)
-        : products.filter(
-            (p) =>
-              Number(p.stock_quantity) > 0 && Number(p.stock_quantity) <= Number(p.reorder_level),
-          );
+        : mode === "in"
+          ? products.filter((p) => Number(p.stock_quantity) > 0)
+          : products.filter(
+              (p) =>
+                Number(p.stock_quantity) > 0 && Number(p.stock_quantity) <= Number(p.reorder_level),
+            );
 
-    return matching
-      .map((p) => {
-        // Refill to the reorder level at least, and never suggest zero.
-        const target = Math.max(Number(p.reorder_level), 1);
-        const shortfall = Math.max(0, target - Number(p.stock_quantity));
-        return {
-          product: p,
-          shortfall,
-          cost: shortfall * Number(p.unit_buying_price),
-          moved: lastMoved.get(p.id) ?? null,
-        };
-      })
-      .sort((a, b) => b.cost - a.cost);
+    const priced = matching.map((p) => {
+      // Refill to the reorder level at least, and never suggest zero.
+      const target = Math.max(Number(p.reorder_level), 1);
+      const shortfall = Math.max(0, target - Number(p.stock_quantity));
+      return {
+        product: p,
+        shortfall,
+        cost: shortfall * Number(p.unit_buying_price),
+        onHandValue: Number(p.stock_quantity) * Number(p.unit_buying_price),
+        moved: lastMoved.get(p.id) ?? null,
+      };
+    });
+
+    // Refills sort by what they cost; a healthy shelf sorts by what is on it.
+    return priced.sort((a, b) => (mode === "in" ? b.onHandValue - a.onHandValue : b.cost - a.cost));
   }, [products, mode, lastMoved]);
 
   if (!rows.length) {
@@ -1037,7 +1041,9 @@ function ShelfDetail({
       <p className="py-6 text-center text-sm text-muted-foreground">
         {mode === "out"
           ? "Nothing is out of stock. Every item has something on the shelf."
-          : "Nothing is below its reorder level."}
+          : mode === "in"
+            ? "Nothing is on the shelf — every product has run down to zero."
+            : "Nothing is below its reorder level."}
       </p>
     );
   }
@@ -1046,11 +1052,25 @@ function ShelfDetail({
     <div className="space-y-3">
       <div className="grid gap-2 sm:grid-cols-3">
         <Stat
-          label={mode === "out" ? "Out of stock" : "Below reorder level"}
+          label={
+            mode === "out" ? "Out of stock" : mode === "in" ? "In stock" : "Below reorder level"
+          }
           value={num(rows.length)}
         />
-        <Stat label="Units to buy" value={num(rows.reduce((a, r) => a + r.shortfall, 0))} />
-        <Stat label="Cost to refill" value={ugx(rows.reduce((a, r) => a + r.cost, 0))} />
+        {mode === "in" ? (
+          <>
+            <Stat
+              label="Units on hand"
+              value={num(rows.reduce((a, r) => a + Number(r.product.stock_quantity), 0))}
+            />
+            <Stat label="Worth at cost" value={ugx(rows.reduce((a, r) => a + r.onHandValue, 0))} />
+          </>
+        ) : (
+          <>
+            <Stat label="Units to buy" value={num(rows.reduce((a, r) => a + r.shortfall, 0))} />
+            <Stat label="Cost to refill" value={ugx(rows.reduce((a, r) => a + r.cost, 0))} />
+          </>
+        )}
       </div>
 
       <Table>
@@ -1059,11 +1079,13 @@ function ShelfDetail({
             <TableHead>Item</TableHead>
             <TableHead className="text-right">On hand</TableHead>
             <TableHead className="text-right">Reorder at</TableHead>
-            <TableHead className="text-right">To buy</TableHead>
+            <TableHead className="text-right">Buys at</TableHead>
+            <TableHead className="text-right">Sells at</TableHead>
+            <TableHead className="text-right">{mode === "in" ? "Value" : "To buy"}</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
-          {rows.map(({ product: p, shortfall, cost, moved }) => {
+          {rows.map(({ product: p, shortfall, cost, onHandValue, moved }) => {
             const isOpen = openId === p.id;
             return (
               <Fragment key={p.id}>
@@ -1090,11 +1112,19 @@ function ShelfDetail({
                   <TableCell className="tabular text-right text-muted-foreground">
                     {num(p.reorder_level)}
                   </TableCell>
-                  <TableCell className="tabular text-right">{num(shortfall)}</TableCell>
+                  <TableCell className="tabular text-right text-muted-foreground">
+                    {ugx(p.unit_buying_price)}
+                  </TableCell>
+                  <TableCell className="tabular text-right text-muted-foreground">
+                    {ugx(p.unit_selling_price)}
+                  </TableCell>
+                  <TableCell className="tabular text-right">
+                    {mode === "in" ? ugx(onHandValue) : num(shortfall)}
+                  </TableCell>
                 </TableRow>
                 {isOpen && (
                   <TableRow className="bg-muted/40 hover:bg-muted/40">
-                    <TableCell colSpan={4} className="p-3">
+                    <TableCell colSpan={6} className="p-3">
                       <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
                         <Fact label="Buys at" value={ugx(p.unit_buying_price)} />
                         <Fact label="Sells at" value={ugx(p.unit_selling_price)} />
