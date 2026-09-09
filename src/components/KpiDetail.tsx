@@ -418,7 +418,7 @@ function SalesDetail({ sales }: { sales: Sale[] }) {
     for (const sale of recent) {
       const names = (lines.get(sale.id) ?? [])
         .filter((l) => Number(l.quantity) > 0)
-        .map((l) => `${l.product_name}${Number(l.quantity) > 1 ? ` ×${num(l.quantity)}` : ""}`);
+        .map((l) => `${l.product_name} ×${num(l.quantity)}`);
       out.set(sale.id, names.join(", "));
     }
     return out;
@@ -1154,29 +1154,52 @@ function ShelfDetail({
 }
 
 /**
- * Every commodity on the shelf, read as a purchase: how many were bought, what
- * one carton cost, and what the whole lot cost.
+ * Every commodity on the shelf, read the way the owner buys and prices it.
  *
- * Two figures sit side by side and are never added together. "Earned" is
- * revenue less the buying price of the units that actually sold — the gross
- * profit in the statement, split per item. "Cash balance in stock" is what the
- * units still on the shelf would make at the list price, less what they cost to
- * buy: money the store is holding, not money it has made. An item priced below
- * what it cost would drag that balance negative, which reads as a debt the shop
- * does not have, so the balance is floored at zero.
+ * Nothing here is per carton: a shop sells sacks, sachets and single pieces,
+ * and the only quantity that means anything is the one the seller typed. So
+ * every figure is built off that unit —
+ *
+ *   - cost per quantity — the retail price on the item, as entered.
+ *   - total purchase cost — the whole shelf at that price.
+ *   - cash balance in stock — the money still tied up in the stock, at what it
+ *     cost to buy.
+ *   - earned — the retail price less what the supplier charged, on every unit
+ *     held. It is a projection off the shelf, never money already taken; the
+ *     gross profit on the sales that have happened sits inside the row.
+ *
+ * An item priced below what the supplier charged would drag earnings negative,
+ * which reads as a debt the shop does not have, so it is floored at zero.
  */
 function InStockDetail({ products, sales }: { products: Product[]; sales: Sale[] }) {
   const [openId, setOpenId] = useState<string | null>(null);
 
-  const { rows, stockProfit, stockRetail, stockCost, earned } = useMemo(() => {
+  const { rows, cashBalance, purchaseCost, earned } = useMemo(() => {
     const report = profitByCommodity(products, sales);
-    const onShelf = report.rows.filter((r) => r.onHand > 0);
+    const onShelf = report.rows
+      .filter((r) => r.onHand > 0)
+      .map((r) => {
+        const sellPrice = Number(r.product?.unit_selling_price ?? 0);
+        // The supplier's invoice is the truer cost, but plenty of items were
+        // put on the system before that field existed. Those fall back to the
+        // buying price, which is the same number in most shops anyway.
+        const supplierPrice = Number(
+          r.product?.supplier_price ?? r.product?.unit_buying_price ?? 0,
+        );
+        return {
+          ...r,
+          sellPrice,
+          supplierPrice,
+          purchaseCost: r.onHand * sellPrice,
+          cashBalance: r.stockCost,
+          projected: Math.max(0, r.onHand * (sellPrice - supplierPrice)),
+        };
+      });
     return {
-      rows: [...onShelf].sort((a, b) => b.stockProfit - a.stockProfit),
-      stockProfit: onShelf.reduce((a, r) => a + Math.max(0, r.stockProfit), 0),
-      stockRetail: onShelf.reduce((a, r) => a + r.stockRetail, 0),
-      stockCost: onShelf.reduce((a, r) => a + r.stockCost, 0),
-      earned: onShelf.reduce((a, r) => a + r.earned, 0),
+      rows: [...onShelf].sort((a, b) => b.projected - a.projected),
+      cashBalance: onShelf.reduce((a, r) => a + r.cashBalance, 0),
+      purchaseCost: onShelf.reduce((a, r) => a + r.purchaseCost, 0),
+      earned: onShelf.reduce((a, r) => a + r.projected, 0),
     };
   }, [products, sales]);
 
@@ -1192,16 +1215,15 @@ function InStockDetail({ products, sales }: { products: Product[]; sales: Sale[]
     <div className="space-y-3">
       <div className="grid gap-2 sm:grid-cols-3">
         <Stat label="Commodities in stock" value={num(rows.length)} />
-        <Stat label="Cash balance in stock" value={ugx(stockProfit)} />
+        <Stat label="Cash balance in stock" value={ugx(cashBalance)} />
         <Stat label="Earned by these items" value={ugx(earned)} />
       </div>
 
       <p className="text-xs text-muted-foreground">
-        The shelf cost {ugx(stockCost)} to buy and is priced at {ugx(stockRetail)}, leaving a cash
-        balance in stock of {ugx(stockProfit)} — what it would make if it all sold, counting nothing
-        for anything priced below what it cost. It has not been earned, so it is never added to the{" "}
-        {ugx(earned)} these items have already made on the sales on file. Tap an item for its
-        figures.
+        {ugx(cashBalance)} is tied up in the stock still on the shelf, priced to bring in{" "}
+        {ugx(purchaseCost)} and to earn {ugx(earned)} over what the supplier charged. Those earnings
+        are a projection off the shelf, not money taken — nothing is counted for an item priced
+        below what it cost. Tap an item for what it has actually sold for.
       </p>
 
       <div className="overflow-x-auto">
@@ -1210,7 +1232,7 @@ function InStockDetail({ products, sales }: { products: Product[]; sales: Sale[]
             <TableRow>
               <TableHead>Item</TableHead>
               <TableHead className="text-right">Quantity purchased</TableHead>
-              <TableHead className="text-right">Cost per carton</TableHead>
+              <TableHead className="text-right">Cost per quantity</TableHead>
               <TableHead className="text-right">Total purchase cost</TableHead>
               <TableHead className="text-right">Cash balance in stock</TableHead>
               <TableHead className="text-right">Earned</TableHead>
@@ -1239,39 +1261,39 @@ function InStockDetail({ products, sales }: { products: Product[]; sales: Sale[]
                       {num(r.onHand)}
                     </TableCell>
                     <TableCell className="tabular text-right text-muted-foreground">
-                      {ugx(p?.unit_buying_price ?? 0)}
+                      {ugx(r.sellPrice)}
                     </TableCell>
                     <TableCell className="tabular text-right text-muted-foreground">
-                      {ugx(r.stockCost)}
+                      {ugx(r.purchaseCost)}
                     </TableCell>
                     <TableCell className="tabular text-right font-semibold">
-                      {ugx(Math.max(0, r.stockProfit))}
+                      {ugx(r.cashBalance)}
                     </TableCell>
                     <TableCell
-                      className={`tabular text-right ${r.earned > 0 ? "text-success" : "text-muted-foreground"}`}
+                      className={`tabular text-right ${r.projected > 0 ? "text-success" : "text-muted-foreground"}`}
                     >
-                      {r.soldQty > 0 ? ugx(r.earned) : "—"}
+                      {ugx(r.projected)}
                     </TableCell>
                   </TableRow>
                   {isOpen && (
                     <TableRow className="bg-muted/40 hover:bg-muted/40">
                       <TableCell colSpan={6} className="p-3">
                         <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-                          <Fact label="On the shelf at retail" value={ugx(r.stockRetail)} />
-                          <Fact label="Total purchase cost" value={ugx(r.stockCost)} />
+                          <Fact label="Total purchase cost" value={ugx(r.purchaseCost)} />
+                          <Fact label="Cash balance in stock" value={ugx(r.cashBalance)} />
                           <Fact
                             label="Purchase price from supplier"
-                            value={p?.supplier_price != null ? ugx(p.supplier_price) : "—"}
-                          />
-                          <Fact
-                            label="Cash balance in stock"
-                            value={ugx(Math.max(0, r.stockProfit))}
+                            value={
+                              p?.supplier_price != null
+                                ? ugx(p.supplier_price)
+                                : `${ugx(r.supplierPrice)} (buying price)`
+                            }
                           />
                           <Fact label="Reorder at" value={num(p?.reorder_level ?? 0)} />
                           <Fact label="Units sold" value={num(r.soldQty)} />
-                          <Fact label="Revenue earned" value={ugx(r.revenue)} />
+                          <Fact label="Revenue taken" value={ugx(r.revenue)} />
                           <Fact label="Buying price of those units" value={ugx(r.buyingPrice)} />
-                          <Fact label="Gross profit earned" value={ugx(r.earned)} />
+                          <Fact label="Gross profit on sales" value={ugx(r.earned)} />
                         </div>
                       </TableCell>
                     </TableRow>
