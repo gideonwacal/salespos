@@ -19,6 +19,7 @@ class ProductSerializer(serializers.ModelSerializer):
             "category",
             "unit_buying_price",
             "unit_selling_price",
+            "supplier_price",
             "wholesale_price",
             "stock_quantity",
             "reorder_level",

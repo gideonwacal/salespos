@@ -10,6 +10,13 @@ class Product(WorkspaceScoped):
     category = models.CharField(max_length=100, default="General Merchandise")
     unit_buying_price = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     unit_selling_price = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    # What the supplier invoiced for one unit. Kept apart from the buying price
+    # the shop values stock at: the two are usually the same, but a delivery
+    # charge or a haggled discount pulls them apart, and the owner wants to see
+    # what was actually paid.
+    supplier_price = models.DecimalField(
+        max_digits=14, decimal_places=2, null=True, blank=True
+    )
     wholesale_price = models.DecimalField(
         max_digits=14, decimal_places=2, null=True, blank=True
     )

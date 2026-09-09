@@ -56,6 +56,7 @@ const blank = {
   name: "",
   category: "",
   unit_buying_price: "",
+  supplier_price: "",
   unit_selling_price: "",
   wholesale_price: "",
   stock_quantity: "",
@@ -112,6 +113,7 @@ function Inventory() {
       name: p.name,
       category: p.category,
       unit_buying_price: String(p.unit_buying_price),
+      supplier_price: p.supplier_price != null ? String(p.supplier_price) : "",
       unit_selling_price: String(p.unit_selling_price),
       wholesale_price: p.wholesale_price != null ? String(p.wholesale_price) : "",
       stock_quantity: String(p.stock_quantity),
@@ -131,6 +133,9 @@ function Inventory() {
       name: form.name.trim(),
       category: form.category || CATEGORIES[0],
       unit_buying_price: Number(form.unit_buying_price) || 0,
+      // What the supplier actually invoiced. Left null when nobody typed it,
+      // so an untouched item does not claim a price it was never given.
+      supplier_price: form.supplier_price ? Number(form.supplier_price) : null,
       unit_selling_price: Number(form.unit_selling_price) || 0,
       wholesale_price: form.wholesale_price ? Number(form.wholesale_price) : null,
       stock_quantity: Number(form.stock_quantity) || 0,
@@ -228,6 +233,7 @@ function Inventory() {
       "name",
       "category",
       "unit_buying_price",
+      "supplier_price",
       "unit_selling_price",
       "wholesale_price",
       "stock_quantity",
@@ -240,6 +246,7 @@ function Inventory() {
           `"${p.name.replace(/"/g, '""')}"`,
           `"${p.category}"`,
           p.unit_buying_price,
+          p.supplier_price ?? "",
           p.unit_selling_price,
           p.wholesale_price ?? "",
           p.stock_quantity,
@@ -271,6 +278,7 @@ function Inventory() {
         name: r.name,
         category: r.category || "General Merchandise",
         unit_buying_price: Number(r.unit_buying_price) || 0,
+        supplier_price: r.supplier_price ? Number(r.supplier_price) : null,
         unit_selling_price: Number(r.unit_selling_price) || 0,
         wholesale_price: r.wholesale_price ? Number(r.wholesale_price) : null,
         stock_quantity: Number(r.stock_quantity) || 0,
@@ -520,6 +528,7 @@ function Inventory() {
             {(
               [
                 ["unit_buying_price", "Buying price (UGX)"],
+                ["supplier_price", "Purchase price from supplier (UGX)"],
                 ["unit_selling_price", "Retail price (UGX)"],
                 ...(hasFeature(industry, "wholesale_price")
                   ? [

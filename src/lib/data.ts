@@ -8,6 +8,8 @@ export type Product = {
   category: string;
   unit_buying_price: number;
   unit_selling_price: number;
+  /** What the supplier invoiced for one unit. Absent on rows created before this. */
+  supplier_price?: number | null;
   wholesale_price: number | null;
   stock_quantity: number;
   reorder_level: number;

@@ -162,6 +162,9 @@ function Dashboard() {
       monthTotal,
       monthCount: monthSales.length,
       grossProfit: monthTotal - buyingPrice,
+      // The month is what the tile leads on, but the owner also wants the
+      // running total: every sale on file, less what those units cost to buy.
+      totalGrossProfit: sum(sales.map((s) => Number(s.total_amount) - Number(s.total_cost))),
       // Net profit is gross profit less the overheads, everywhere in the app.
       netProfit: monthTotal - buyingPrice - overheads,
       overheads,
@@ -290,7 +293,7 @@ function Dashboard() {
           <Mini
             label="Gross profit"
             value={ugx(m.grossProfit)}
-            sub={`Sales less buying price · net ${ugx(m.netProfit)}`}
+            sub={`This month · net ${ugx(m.netProfit)} · ${ugx(m.totalGrossProfit)} earned in total`}
             accent
           />
         </div>

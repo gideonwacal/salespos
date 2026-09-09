@@ -14,7 +14,7 @@ import {
   type StockTxn,
   type Supplier,
 } from "@/lib/data";
-import { deleteRow, staffUserId, type StaffRow } from "@/lib/db";
+import { deleteRow, saleLinesBySale, staffUserId, type StaffRow } from "@/lib/db";
 import { profitByCommodity } from "@/lib/profit";
 import { useAuth } from "@/hooks/useAuth";
 import { useQueryClient } from "@tanstack/react-query";
@@ -404,9 +404,28 @@ function SalesDetail({ sales }: { sales: Sale[] }) {
     return [...map.entries()].sort((a, b) => b[1].total - a[1].total);
   }, [cash]);
 
+  const recent = useMemo(
+    () => [...cash].sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, 15),
+    [cash],
+  );
+
+  // What each of those sales actually put across the counter. A customer name
+  // and a total say who paid and how much; the owner also wants to know what
+  // they walked out with.
+  const boughtBySale = useMemo(() => {
+    const lines = saleLinesBySale(recent);
+    const out = new Map<string, string>();
+    for (const sale of recent) {
+      const names = (lines.get(sale.id) ?? [])
+        .filter((l) => Number(l.quantity) > 0)
+        .map((l) => `${l.product_name}${Number(l.quantity) > 1 ? ` ×${num(l.quantity)}` : ""}`);
+      out.set(sale.id, names.join(", "));
+    }
+    return out;
+  }, [recent]);
+
   if (!cash.length) return <Empty what="cash sales" />;
 
-  const recent = [...cash].sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, 15);
   const profit = cash.reduce((a, s) => a + (Number(s.total_amount) - Number(s.total_cost)), 0);
 
   return (
@@ -450,6 +469,7 @@ function SalesDetail({ sales }: { sales: Sale[] }) {
             <TableRow>
               <TableHead>When</TableHead>
               <TableHead>Customer</TableHead>
+              <TableHead>Items purchased</TableHead>
               <TableHead>Paid via</TableHead>
               <TableHead className="text-right">Total</TableHead>
             </TableRow>
@@ -459,6 +479,9 @@ function SalesDetail({ sales }: { sales: Sale[] }) {
               <TableRow key={s.id}>
                 <TableCell>{shortDate(s.created_at)}</TableCell>
                 <TableCell className="font-medium">{s.customer_name || "Walk-in"}</TableCell>
+                <TableCell className="max-w-[16rem] text-muted-foreground">
+                  {boughtBySale.get(s.id) || "—"}
+                </TableCell>
                 <TableCell>{paymentLabel(s.payment_method)}</TableCell>
                 <Money>{ugx(s.total_amount)}</Money>
               </TableRow>
@@ -1131,13 +1154,16 @@ function ShelfDetail({
 }
 
 /**
- * Every commodity on the shelf, with gross profit against each one.
+ * Every commodity on the shelf, read as a purchase: how many were bought, what
+ * one carton cost, and what the whole lot cost.
  *
  * Two figures sit side by side and are never added together. "Earned" is
  * revenue less the buying price of the units that actually sold — the gross
- * profit in the statement, split per item. "In stock" is what the units still
- * on the shelf would make at the list price, less what they cost to buy: money
- * the store is holding, not money it has made.
+ * profit in the statement, split per item. "Cash balance in stock" is what the
+ * units still on the shelf would make at the list price, less what they cost to
+ * buy: money the store is holding, not money it has made. An item priced below
+ * what it cost would drag that balance negative, which reads as a debt the shop
+ * does not have, so the balance is floored at zero.
  */
 function InStockDetail({ products, sales }: { products: Product[]; sales: Sale[] }) {
   const [openId, setOpenId] = useState<string | null>(null);
@@ -1147,7 +1173,7 @@ function InStockDetail({ products, sales }: { products: Product[]; sales: Sale[]
     const onShelf = report.rows.filter((r) => r.onHand > 0);
     return {
       rows: [...onShelf].sort((a, b) => b.stockProfit - a.stockProfit),
-      stockProfit: onShelf.reduce((a, r) => a + r.stockProfit, 0),
+      stockProfit: onShelf.reduce((a, r) => a + Math.max(0, r.stockProfit), 0),
       stockRetail: onShelf.reduce((a, r) => a + r.stockRetail, 0),
       stockCost: onShelf.reduce((a, r) => a + r.stockCost, 0),
       earned: onShelf.reduce((a, r) => a + r.earned, 0),
@@ -1166,15 +1192,16 @@ function InStockDetail({ products, sales }: { products: Product[]; sales: Sale[]
     <div className="space-y-3">
       <div className="grid gap-2 sm:grid-cols-3">
         <Stat label="Commodities in stock" value={num(rows.length)} />
-        <Stat label="Profit held in stock" value={ugx(stockProfit)} />
+        <Stat label="Cash balance in stock" value={ugx(stockProfit)} />
         <Stat label="Earned by these items" value={ugx(earned)} />
       </div>
 
       <p className="text-xs text-muted-foreground">
-        Profit held in stock is {ugx(stockRetail)} at the selling price less {ugx(stockCost)} at the
-        buying price — what the shelf would make if it all sold. It has not been earned, so it is
-        never added to the {ugx(earned)} these items have already made on the sales on file. Tap an
-        item for its figures.
+        The shelf cost {ugx(stockCost)} to buy and is priced at {ugx(stockRetail)}, leaving a cash
+        balance in stock of {ugx(stockProfit)} — what it would make if it all sold, counting nothing
+        for anything priced below what it cost. It has not been earned, so it is never added to the{" "}
+        {ugx(earned)} these items have already made on the sales on file. Tap an item for its
+        figures.
       </p>
 
       <div className="overflow-x-auto">
@@ -1182,10 +1209,10 @@ function InStockDetail({ products, sales }: { products: Product[]; sales: Sale[]
           <TableHeader>
             <TableRow>
               <TableHead>Item</TableHead>
-              <TableHead className="text-right">On hand</TableHead>
-              <TableHead className="text-right">Buys at</TableHead>
-              <TableHead className="text-right">Sells at</TableHead>
-              <TableHead className="text-right">In stock</TableHead>
+              <TableHead className="text-right">Quantity purchased</TableHead>
+              <TableHead className="text-right">Cost per carton</TableHead>
+              <TableHead className="text-right">Total purchase cost</TableHead>
+              <TableHead className="text-right">Cash balance in stock</TableHead>
               <TableHead className="text-right">Earned</TableHead>
             </TableRow>
           </TableHeader>
@@ -1215,14 +1242,10 @@ function InStockDetail({ products, sales }: { products: Product[]; sales: Sale[]
                       {ugx(p?.unit_buying_price ?? 0)}
                     </TableCell>
                     <TableCell className="tabular text-right text-muted-foreground">
-                      {ugx(p?.unit_selling_price ?? 0)}
+                      {ugx(r.stockCost)}
                     </TableCell>
-                    <TableCell
-                      className={`tabular text-right font-semibold ${
-                        r.stockProfit < 0 ? "text-destructive" : ""
-                      }`}
-                    >
-                      {ugx(r.stockProfit)}
+                    <TableCell className="tabular text-right font-semibold">
+                      {ugx(Math.max(0, r.stockProfit))}
                     </TableCell>
                     <TableCell
                       className={`tabular text-right ${r.earned > 0 ? "text-success" : "text-muted-foreground"}`}
@@ -1235,8 +1258,15 @@ function InStockDetail({ products, sales }: { products: Product[]; sales: Sale[]
                       <TableCell colSpan={6} className="p-3">
                         <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
                           <Fact label="On the shelf at retail" value={ugx(r.stockRetail)} />
-                          <Fact label="On the shelf at buying price" value={ugx(r.stockCost)} />
-                          <Fact label="Profit held in stock" value={ugx(r.stockProfit)} />
+                          <Fact label="Total purchase cost" value={ugx(r.stockCost)} />
+                          <Fact
+                            label="Purchase price from supplier"
+                            value={p?.supplier_price != null ? ugx(p.supplier_price) : "—"}
+                          />
+                          <Fact
+                            label="Cash balance in stock"
+                            value={ugx(Math.max(0, r.stockProfit))}
+                          />
                           <Fact label="Reorder at" value={num(p?.reorder_level ?? 0)} />
                           <Fact label="Units sold" value={num(r.soldQty)} />
                           <Fact label="Revenue earned" value={ugx(r.revenue)} />
