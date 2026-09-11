@@ -1328,26 +1328,26 @@ function StockDetail({ products }: { products: Product[] }) {
   return (
     <div className="space-y-4">
       <div className="grid gap-2 sm:grid-cols-3">
-        <Stat label="At buying price" value={ugx(totals.cost)} />
+        <Stat label="Stock value" value={ugx(totals.cost)} />
         <Stat label="At retail" value={ugx(totals.retail)} />
         <Stat label="Profit held in stock" value={ugx(totals.retail - totals.cost)} />
       </div>
 
-      {/* The same price list the sales team reads, so the owner and the counter
-          are never quoting different figures: what one unit costs to bring in,
-          and what it goes out for retail and wholesale. The stock value the
-          tile is about follows on the right. */}
+      {/* The same price list the sales team reads, column for column, so the
+          owner and the counter are never quoting different figures: what the
+          shelf is worth, what one unit costs to bring in, and what it goes out
+          for retail and wholesale. */}
       <div className="overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow>
               <TableHead>Item</TableHead>
               <TableHead>Category</TableHead>
-              <TableHead className="text-right">Supply price per quantity</TableHead>
-              <TableHead className="text-right">Retail selling price</TableHead>
-              <TableHead className="text-right">Wholesale selling price</TableHead>
-              <TableHead className="text-right">Qty</TableHead>
-              <TableHead className="text-right">At buying price</TableHead>
+              <TableHead className="text-right">Stock value</TableHead>
+              <TableHead className="text-right">Supply price per unit</TableHead>
+              <TableHead className="text-right">Retail price per unit</TableHead>
+              <TableHead className="text-right">Wholesale price per unit</TableHead>
+              <TableHead className="text-right">Stock quantity</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -1355,13 +1355,13 @@ function StockDetail({ products }: { products: Product[] }) {
               <TableRow key={p.id}>
                 <TableCell className="font-medium">{p.name}</TableCell>
                 <TableCell className="text-muted-foreground">{p.category}</TableCell>
+                <Money>{ugx(cost)}</Money>
                 <TableCell className="tabular text-right">{ugx(p.unit_buying_price)}</TableCell>
                 <TableCell className="tabular text-right">{ugx(p.unit_selling_price)}</TableCell>
                 <TableCell className="tabular text-right">
                   {p.wholesale_price ? ugx(p.wholesale_price) : "—"}
                 </TableCell>
                 <TableCell className="text-right">{num(p.stock_quantity)}</TableCell>
-                <Money>{ugx(cost)}</Money>
               </TableRow>
             ))}
           </TableBody>

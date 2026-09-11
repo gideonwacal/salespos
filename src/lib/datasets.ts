@@ -292,7 +292,7 @@ const STOCK_MOVEMENTS: TransferSchema = {
     { key: "quantity_in", label: "Quantity in", kind: "integer" },
     { key: "quantity_out", label: "Quantity out", kind: "integer" },
     { key: "stock_after", label: "Stock on hand today", kind: "integer" },
-    { key: "buying_price", label: "Supply price per quantity", kind: "money" },
+    { key: "buying_price", label: "Supply price per unit", kind: "money" },
     { key: "movement_value", label: "Value moved", kind: "money" },
     { key: "expiry_date", label: "Expiry date", kind: "text" },
     { key: "notes", label: "Notes", kind: "text" },
@@ -359,7 +359,7 @@ function products(industry: IndustryProfile): TransferSchema {
     },
     {
       key: "unit_buying_price",
-      label: "Supply price per quantity",
+      label: "Supply price per unit",
       kind: "money",
       aliases: [
         "cost",
@@ -369,6 +369,7 @@ function products(industry: IndustryProfile): TransferSchema {
         "purchase price",
         "supply price",
         "supply price per quantity",
+        "supply price per unit",
       ],
       example: "4200",
     },

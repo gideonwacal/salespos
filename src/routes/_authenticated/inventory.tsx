@@ -214,7 +214,7 @@ function Inventory() {
 
     toast.success("Stock movement recorded", {
       description: changed
-        ? `${stockFor.name} now supplies at ${ugx(supply)} per quantity.`
+        ? `${stockFor.name} now supplies at ${ugx(supply)} per unit.`
         : undefined,
     });
     setStockFor(null);
@@ -398,10 +398,11 @@ function Inventory() {
               <TableRow>
                 <TableHead>Item</TableHead>
                 <TableHead>Category</TableHead>
-                <TableHead className="text-right">Supply price per quantity</TableHead>
-                <TableHead className="text-right">Retail selling price</TableHead>
-                <TableHead className="text-right">Wholesale selling price</TableHead>
-                <TableHead className="text-right">Stock</TableHead>
+                <TableHead className="text-right">Stock value</TableHead>
+                <TableHead className="text-right">Supply price per unit</TableHead>
+                <TableHead className="text-right">Retail price per unit</TableHead>
+                <TableHead className="text-right">Wholesale price per unit</TableHead>
+                <TableHead className="text-right">Stock quantity</TableHead>
                 <TableHead>Expiry</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
@@ -413,6 +414,12 @@ function Inventory() {
                   <TableRow key={p.id}>
                     <TableCell className="font-medium">{p.name}</TableCell>
                     <TableCell className="text-muted-foreground">{p.category}</TableCell>
+                    {/* What is sitting on this shelf: the supply price against
+                        every unit of it. The figure the seller is asked for
+                        when a count looks wrong. */}
+                    <TableCell className="tabular text-right font-semibold">
+                      {ugx(Number(p.unit_buying_price) * Number(p.stock_quantity))}
+                    </TableCell>
                     {/* What the last delivery cost per unit, set when the stock
                         was received. The same figure the profit is worked out
                         against, so the shelf and the books never disagree. */}
@@ -548,15 +555,15 @@ function Inventory() {
             </div>
             {(
               [
-                ["unit_buying_price", "Supply price per quantity (UGX)"],
-                ["unit_selling_price", "Retail selling price (UGX)"],
+                ["unit_buying_price", "Supply price per unit (UGX)"],
+                ["unit_selling_price", "Retail price per unit (UGX)"],
                 ...(hasFeature(industry, "wholesale_price")
                   ? [
                       [
                         "wholesale_price",
                         industry.id === "hardware"
-                          ? "Trade selling price (UGX)"
-                          : "Wholesale selling price (UGX)",
+                          ? "Trade price per unit (UGX)"
+                          : "Wholesale price per unit (UGX)",
                       ],
                     ]
                   : []),
@@ -574,6 +581,19 @@ function Inventory() {
                 />
               </div>
             ))}
+
+            {/* Stock value is the supply price against the quantity, so it is
+                shown rather than asked for — and shown here, below the two
+                figures it is made of, so it adds up in front of the seller. */}
+            <div className="space-y-1.5 sm:col-span-2">
+              <Label>Stock value</Label>
+              <div className="tabular flex h-10 items-center rounded-md border border-input bg-muted/40 px-3 font-semibold">
+                {ugx(Number(form.unit_buying_price || 0) * Number(form.stock_quantity || 0))}
+              </div>
+              <p className="text-[11px] text-muted-foreground">
+                Supply price per unit × stock quantity. Worked out for you.
+              </p>
+            </div>
             {hasFeature(industry, "unit_of_measure") && (
               <div className="space-y-1.5">
                 <Label>Sold by</Label>
@@ -676,7 +696,7 @@ function Inventory() {
               />
             </div>
             <div className="space-y-1.5">
-              <Label>Supply price per quantity (UGX)</Label>
+              <Label>Supply price per unit (UGX)</Label>
               <Input
                 type="number"
                 min={0}
