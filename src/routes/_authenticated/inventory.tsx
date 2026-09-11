@@ -86,6 +86,9 @@ function Inventory() {
   // What this delivery cost per unit. Prices move between deliveries, so the
   // figure is asked for at the moment stock lands rather than assumed.
   const [stockPrice, setStockPrice] = useState("");
+  // What the seller is typing into stock value, while they are typing it.
+  // Null means the field shows the figure worked out from price × quantity.
+  const [valueDraft, setValueDraft] = useState<string | null>(null);
   const [stockNote, setStockNote] = useState("");
   const [stockExpiry, setStockExpiry] = useState("");
   const [damageFor, setDamageFor] = useState<Product | null>(null);
@@ -107,6 +110,7 @@ function Inventory() {
   const openNew = () => {
     setEditing(null);
     setForm({ ...blank });
+    setValueDraft(null);
     setOpen(true);
   };
 
@@ -127,6 +131,7 @@ function Inventory() {
       batch_number: p.batch_number ?? "",
       prescription_only: p.prescription_only ?? false,
     });
+    setValueDraft(null);
     setOpen(true);
   };
 
@@ -322,6 +327,11 @@ function Inventory() {
     toast.success(`${parsed.length} items imported`);
     queryClient.invalidateQueries({ queryKey: ["products"] });
   };
+
+  // What the form currently says the shelf is worth. The stock value field
+  // shows this whenever the seller is not typing their own total into it.
+  const stockValue =
+    (Number(form.unit_buying_price) || 0) * (Number(form.stock_quantity) || 0);
 
   return (
     <div className="space-y-4">
@@ -582,16 +592,37 @@ function Inventory() {
               </div>
             ))}
 
-            {/* Stock value is the supply price against the quantity, so it is
-                shown rather than asked for — and shown here, below the two
-                figures it is made of, so it adds up in front of the seller. */}
+            {/* Stock value works both ways. It fills itself in from the price
+                and the quantity, and a seller who knows what the delivery cost
+                in total can type that instead — the price per unit falls out of
+                it. Only two of the three are ever independent, and this is the
+                one a delivery note actually states. */}
             <div className="space-y-1.5 sm:col-span-2">
-              <Label>Stock value</Label>
-              <div className="tabular flex h-10 items-center rounded-md border border-input bg-muted/40 px-3 font-semibold">
-                {ugx(Number(form.unit_buying_price || 0) * Number(form.stock_quantity || 0))}
-              </div>
+              <Label>Stock value (UGX)</Label>
+              <Input
+                type="number"
+                min={0}
+                value={valueDraft ?? String(stockValue || "")}
+                onChange={(e) => {
+                  const typed = e.target.value;
+                  setValueDraft(typed);
+                  // Split the total across the units on the shelf. With no
+                  // quantity there is nothing to divide by, so the price is
+                  // left alone and the hint below says why.
+                  const qty = Number(form.stock_quantity);
+                  if (!qty || typed.trim() === "") return;
+                  const perUnit = Math.round((Number(typed) / qty) * 100) / 100;
+                  if (!Number.isFinite(perUnit) || perUnit < 0) return;
+                  setForm((f) => ({ ...f, unit_buying_price: String(perUnit) }));
+                }}
+                // Once they stop typing, show the figure the form actually
+                // holds, so a rounded division never reads back as the total.
+                onBlur={() => setValueDraft(null)}
+              />
               <p className="text-[11px] text-muted-foreground">
-                Supply price per unit × stock quantity. Worked out for you.
+                {Number(form.stock_quantity) > 0
+                  ? `Supply price per unit × stock quantity. Type the total you paid and the per-unit price is worked out for you.`
+                  : `Enter a stock quantity first — the per-unit price is this total divided by it.`}
               </p>
             </div>
             {hasFeature(industry, "unit_of_measure") && (
