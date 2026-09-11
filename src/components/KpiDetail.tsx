@@ -1355,9 +1355,7 @@ function StockDetail({ products }: { products: Product[] }) {
               <TableRow key={p.id}>
                 <TableCell className="font-medium">{p.name}</TableCell>
                 <TableCell className="text-muted-foreground">{p.category}</TableCell>
-                <TableCell className="tabular text-right">
-                  {ugx(p.supplier_price ?? p.unit_buying_price)}
-                </TableCell>
+                <TableCell className="tabular text-right">{ugx(p.unit_buying_price)}</TableCell>
                 <TableCell className="tabular text-right">{ugx(p.unit_selling_price)}</TableCell>
                 <TableCell className="tabular text-right">
                   {p.wholesale_price ? ugx(p.wholesale_price) : "—"}

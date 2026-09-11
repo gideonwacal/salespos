@@ -83,6 +83,9 @@ function Inventory() {
   const [open, setOpen] = useState(false);
   const [stockFor, setStockFor] = useState<Product | null>(null);
   const [stockQty, setStockQty] = useState("");
+  // What this delivery cost per unit. Prices move between deliveries, so the
+  // figure is asked for at the moment stock lands rather than assumed.
+  const [stockPrice, setStockPrice] = useState("");
   const [stockNote, setStockNote] = useState("");
   const [stockExpiry, setStockExpiry] = useState("");
   const [damageFor, setDamageFor] = useState<Product | null>(null);
@@ -188,6 +191,15 @@ function Inventory() {
     if (!stockFor || !user) return;
     const qty = Number(stockQty);
     if (!qty) return toast.error("Enter a quantity");
+
+    // The supply price is whatever the last delivery cost, so a price typed
+    // here becomes the item's price from now on. Blank leaves it alone: most
+    // arrivals come in at the price already on file.
+    const supply = stockPrice.trim() === "" ? null : Number(stockPrice);
+    if (supply !== null && (!Number.isFinite(supply) || supply < 0)) {
+      return toast.error("Enter a valid supply price");
+    }
+
     await insertRows("stock_transactions", {
       product_id: stockFor.id,
       type: qty > 0 ? "stock_in" : "adjustment",
@@ -196,9 +208,18 @@ function Inventory() {
       expiry_date: stockExpiry || null,
       performed_by: user.id,
     });
-    toast.success("Stock movement recorded");
+
+    const changed = supply !== null && supply !== Number(stockFor.unit_buying_price);
+    if (changed) await updateRow("products", stockFor.id, { unit_buying_price: supply });
+
+    toast.success("Stock movement recorded", {
+      description: changed
+        ? `${stockFor.name} now supplies at ${ugx(supply)} per quantity.`
+        : undefined,
+    });
     setStockFor(null);
     setStockQty("");
+    setStockPrice("");
     setStockNote("");
     setStockExpiry("");
     queryClient.invalidateQueries();
@@ -392,11 +413,11 @@ function Inventory() {
                   <TableRow key={p.id}>
                     <TableCell className="font-medium">{p.name}</TableCell>
                     <TableCell className="text-muted-foreground">{p.category}</TableCell>
-                    {/* What one unit costs to bring in. The supplier's own
-                        invoice price when it is known, and the buying price the
-                        stock is valued at otherwise. */}
+                    {/* What the last delivery cost per unit, set when the stock
+                        was received. The same figure the profit is worked out
+                        against, so the shelf and the books never disagree. */}
                     <TableCell className="tabular text-right">
-                      {ugx(p.supplier_price ?? p.unit_buying_price)}
+                      {ugx(p.unit_buying_price)}
                     </TableCell>
                     <TableCell className="tabular text-right">
                       {ugx(p.unit_selling_price)}
@@ -527,16 +548,15 @@ function Inventory() {
             </div>
             {(
               [
-                ["unit_buying_price", "Buying price (UGX)"],
-                ["supplier_price", "Purchase price from supplier (UGX)"],
-                ["unit_selling_price", "Retail price (UGX)"],
+                ["unit_buying_price", "Supply price per quantity (UGX)"],
+                ["unit_selling_price", "Retail selling price (UGX)"],
                 ...(hasFeature(industry, "wholesale_price")
                   ? [
                       [
                         "wholesale_price",
                         industry.id === "hardware"
-                          ? "Trade price (UGX)"
-                          : "Wholesale price (UGX)",
+                          ? "Trade selling price (UGX)"
+                          : "Wholesale selling price (UGX)",
                       ],
                     ]
                   : []),
@@ -634,7 +654,14 @@ function Inventory() {
       {/* Owner only: a cashier who clears the shop by mistake cannot undo it. */}
       {isOwner && <DangerZone productCount={products.length} />}
 
-      <Dialog open={!!stockFor} onOpenChange={(o) => !o && setStockFor(null)}>
+      <Dialog
+        open={!!stockFor}
+        onOpenChange={(o) => {
+          if (o) return;
+          setStockFor(null);
+          setStockPrice("");
+        }}
+      >
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle>Stock arrival — {stockFor?.name}</DialogTitle>
@@ -647,6 +674,20 @@ function Inventory() {
                 value={stockQty}
                 onChange={(e) => setStockQty(e.target.value)}
               />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Supply price per quantity (UGX)</Label>
+              <Input
+                type="number"
+                min={0}
+                value={stockPrice}
+                placeholder={stockFor ? String(stockFor.unit_buying_price) : ""}
+                onChange={(e) => setStockPrice(e.target.value)}
+              />
+              <p className="text-[11px] text-muted-foreground">
+                What this delivery cost per unit. Leave it blank to keep the current{" "}
+                {stockFor ? ugx(stockFor.unit_buying_price) : "price"}.
+              </p>
             </div>
             <div className="space-y-1.5">
               <Label>Batch expiry date</Label>

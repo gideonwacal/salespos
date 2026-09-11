@@ -292,7 +292,7 @@ const STOCK_MOVEMENTS: TransferSchema = {
     { key: "quantity_in", label: "Quantity in", kind: "integer" },
     { key: "quantity_out", label: "Quantity out", kind: "integer" },
     { key: "stock_after", label: "Stock on hand today", kind: "integer" },
-    { key: "buying_price", label: "Buying price", kind: "money" },
+    { key: "buying_price", label: "Supply price per quantity", kind: "money" },
     { key: "movement_value", label: "Value moved", kind: "money" },
     { key: "expiry_date", label: "Expiry date", kind: "text" },
     { key: "notes", label: "Notes", kind: "text" },
@@ -359,14 +359,22 @@ function products(industry: IndustryProfile): TransferSchema {
     },
     {
       key: "unit_buying_price",
-      label: "Buying price",
+      label: "Supply price per quantity",
       kind: "money",
-      aliases: ["cost", "cost price", "buy price", "purchase price"],
+      aliases: [
+        "cost",
+        "cost price",
+        "buy price",
+        "buying price",
+        "purchase price",
+        "supply price",
+        "supply price per quantity",
+      ],
       example: "4200",
     },
     {
       key: "unit_selling_price",
-      label: "Selling price",
+      label: "Retail selling price",
       kind: "money",
       aliases: ["price", "retail price", "sell price", "selling"],
       example: "5000",
@@ -457,7 +465,7 @@ function products(industry: IndustryProfile): TransferSchema {
       const sell = Number(row.unit_selling_price ?? 0);
       // Not fatal, but almost always a column swapped in the sheet.
       if (sell > 0 && buy > 0 && sell < buy) {
-        return `Selling price (${sell}) is below the buying price (${buy}) — check the columns`;
+        return `Selling price (${sell}) is below the supply price (${buy}) — check the columns`;
       }
       return null;
     },
