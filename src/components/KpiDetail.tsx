@@ -1312,8 +1312,13 @@ function StockDetail({ products }: { products: Product[] }) {
   if (!products.length) return <Empty what="stock" />;
 
   const rows = products
-    .map((p) => ({ p, cost: Number(p.unit_buying_price) * Number(p.stock_quantity) }))
-    .sort((a, b) => b.cost - a.cost)
+    .map((p) => ({
+      p,
+      // Stock value means the same thing here as on the seller's shelf: the
+      // quantity at what it sells for, not what it cost.
+      value: Number(p.unit_selling_price) * Number(p.stock_quantity),
+    }))
+    .sort((a, b) => b.value - a.value)
     .slice(0, 20);
 
   const totals = products.reduce(
@@ -1328,8 +1333,8 @@ function StockDetail({ products }: { products: Product[] }) {
   return (
     <div className="space-y-4">
       <div className="grid gap-2 sm:grid-cols-3">
-        <Stat label="Stock value" value={ugx(totals.cost)} />
-        <Stat label="At retail" value={ugx(totals.retail)} />
+        <Stat label="At supply price" value={ugx(totals.cost)} />
+        <Stat label="Stock value" value={ugx(totals.retail)} />
         <Stat label="Profit held in stock" value={ugx(totals.retail - totals.cost)} />
       </div>
 
@@ -1351,11 +1356,11 @@ function StockDetail({ products }: { products: Product[] }) {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {rows.map(({ p, cost }) => (
+            {rows.map(({ p, value }) => (
               <TableRow key={p.id}>
                 <TableCell className="font-medium">{p.name}</TableCell>
                 <TableCell className="text-muted-foreground">{p.category}</TableCell>
-                <Money>{ugx(cost)}</Money>
+                <Money>{ugx(value)}</Money>
                 <TableCell className="tabular text-right">{ugx(p.unit_buying_price)}</TableCell>
                 <TableCell className="tabular text-right">{ugx(p.unit_selling_price)}</TableCell>
                 <TableCell className="tabular text-right">

@@ -326,10 +326,11 @@ function Inventory() {
     queryClient.invalidateQueries({ queryKey: ["products"] });
   };
 
-  // What the form currently says the shelf is worth. The stock value field
-  // shows this whenever the seller is not typing their own total into it.
+  // What the form currently says the shelf is worth — at what the goods sell
+  // for, not what they cost. The stock value field shows this whenever the
+  // seller is not typing their own total into it.
   const stockValue =
-    (Number(form.unit_buying_price) || 0) * (Number(form.stock_quantity) || 0);
+    (Number(form.unit_selling_price) || 0) * (Number(form.stock_quantity) || 0);
 
   return (
     <div className="space-y-4">
@@ -337,8 +338,10 @@ function Inventory() {
         <div>
           <h1 className="text-2xl font-extrabold">{industry.terms.inventory}</h1>
           <p className="text-sm text-muted-foreground">
-            {products.length} items · valuation{" "}
-            {ugx(products.reduce((a, p) => a + Number(p.unit_buying_price) * p.stock_quantity, 0))}
+            {/* The same sum as the stock value column below it, so the header
+                and the table never quote two different totals. */}
+            {products.length} items · stock value{" "}
+            {ugx(products.reduce((a, p) => a + Number(p.unit_selling_price) * p.stock_quantity, 0))}
           </p>
           {/* A hidden button looks like a broken one. Say which it is. */}
           {!isOwner && (
@@ -422,11 +425,11 @@ function Inventory() {
                   <TableRow key={p.id}>
                     <TableCell className="font-medium">{p.name}</TableCell>
                     <TableCell className="text-muted-foreground">{p.category}</TableCell>
-                    {/* What is sitting on this shelf: the supply price against
-                        every unit of it. The figure the seller is asked for
-                        when a count looks wrong. */}
+                    {/* What is sitting on this shelf, priced at what it sells
+                        for: the retail price against every unit of it. What the
+                        shelf would bring in if it all went today. */}
                     <TableCell className="tabular text-right font-semibold">
-                      {ugx(Number(p.unit_buying_price) * Number(p.stock_quantity))}
+                      {ugx(Number(p.unit_selling_price) * Number(p.stock_quantity))}
                     </TableCell>
                     {/* What the last delivery cost per unit, set when the stock
                         was received. The same figure the profit is worked out
@@ -590,11 +593,10 @@ function Inventory() {
               </div>
             ))}
 
-            {/* Stock value works both ways. It fills itself in from the price
-                and the quantity, and a seller who knows what the delivery cost
-                in total can type that instead — the price per unit falls out of
-                it. Only two of the three are ever independent, and this is the
-                one a delivery note actually states. */}
+            {/* Stock value works both ways. It fills itself in from the retail
+                price and the quantity, and a seller who knows what the whole
+                shelf is worth can type that instead — the retail price per unit
+                falls out of it. Only two of the three are ever independent. */}
             <div className="space-y-1.5 sm:col-span-2">
               <Label>Stock value (UGX)</Label>
               <Input
@@ -611,7 +613,7 @@ function Inventory() {
                   if (!qty || typed.trim() === "") return;
                   const perUnit = Math.round((Number(typed) / qty) * 100) / 100;
                   if (!Number.isFinite(perUnit) || perUnit < 0) return;
-                  setForm((f) => ({ ...f, unit_buying_price: String(perUnit) }));
+                  setForm((f) => ({ ...f, unit_selling_price: String(perUnit) }));
                 }}
                 // Once they stop typing, show the figure the form actually
                 // holds, so a rounded division never reads back as the total.
@@ -619,8 +621,8 @@ function Inventory() {
               />
               <p className="text-[11px] text-muted-foreground">
                 {Number(form.stock_quantity) > 0
-                  ? `Supply price per unit × stock quantity. Type the total you paid and the per-unit price is worked out for you.`
-                  : `Enter a stock quantity first — the per-unit price is this total divided by it.`}
+                  ? `Retail price per unit × stock quantity — what the shelf is worth at selling price. Type a total instead and the retail price per unit is worked out for you.`
+                  : `Enter a stock quantity first — the retail price per unit is this total divided by it.`}
               </p>
             </div>
             {hasFeature(industry, "unit_of_measure") && (
