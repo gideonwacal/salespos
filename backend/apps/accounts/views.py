@@ -16,6 +16,7 @@ from apps.accounts.serializers import (
     WorkspaceSerializer,
 )
 from apps.core.permissions import IsOwnerOrReadOnly, IsWorkspaceMember
+from apps.core.services import erase_workspace_data
 from apps.core.tenancy import resolve_workspace
 
 
@@ -115,6 +116,20 @@ class WorkspaceViewSet(viewsets.ModelViewSet):
                 self.request, message="Only the owner can delete a workspace."
             )
         instance.delete()
+
+    @action(detail=True, methods=["post"], url_path="erase-data")
+    def erase_data(self, request, pk=None):
+        """Empty the business out without touching who works in it.
+
+        Deliberately not a DELETE on this resource: the workspace survives, and
+        so do its people. Only the records the shop has entered go.
+        """
+        workspace = self.get_object()
+        if self._role_in(workspace) != "owner":
+            self.permission_denied(
+                self.request, message="Only the owner can erase the workspace data."
+            )
+        return Response(erase_workspace_data(workspace=workspace))
 
 
 class MembershipViewSet(viewsets.ModelViewSet):

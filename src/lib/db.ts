@@ -19,6 +19,7 @@ import {
   dbSelect,
   dbUpdate,
   dbDelete,
+  eraseWorkspaceData as eraseWorkspaceDataLocal,
   isDemo,
   planById,
   saveBusiness,
@@ -30,6 +31,7 @@ import {
   amendSale,
   checkout,
   clearStore as clearStoreApi,
+  eraseWorkspaceData as eraseWorkspaceDataApi,
   deleteTable,
   hasEndpoint,
   insertTable,
@@ -427,6 +429,25 @@ export async function checkoutSale(input: {
  * and figures, so clearing the shelf leaves the sales history whole. `kept`
  * stays in the result as a zero, mirroring the server.
  */
+/**
+ * Empty the business out, keeping the people who run it.
+ *
+ * Whichever backend is holding the data, the rule is the same: every record
+ * the shop entered goes, and the logins, roles and business profile stay. The
+ * owner is left signed in, looking at an empty shop rather than a login page.
+ *
+ * Returns how many rows went, so the owner is told what actually happened.
+ */
+export async function eraseWorkspaceData(): Promise<number> {
+  // "products" stands for the whole workspace here: either this install talks
+  // to the API for its data or it does not.
+  if (isServerTable("products")) {
+    const result = await eraseWorkspaceDataApi();
+    return result.erased;
+  }
+  return eraseWorkspaceDataLocal();
+}
+
 export async function clearStore(mode: "zero" | "delete"): Promise<ClearResult> {
   if (isServerTable("products")) return clearStoreApi(mode);
 

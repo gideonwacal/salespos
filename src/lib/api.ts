@@ -356,6 +356,26 @@ export type ClearResult = {
   kept: number;
 };
 
+/** What erasing the workspace's data actually removed. */
+export type EraseResult = {
+  /** Rows removed across every table in the workspace. */
+  erased: number;
+  /** Per table, counted before the cascades ran. */
+  tables: Record<string, number>;
+};
+
+/**
+ * Empty the business out, keeping the people who run it.
+ *
+ * Not a DELETE on the workspace: the shop, its logins and its settings all
+ * survive. Owner only; the server enforces that.
+ */
+export function eraseWorkspaceData() {
+  const id = getWorkspaceId();
+  if (!id) throw new Error("No workspace is selected.");
+  return request<EraseResult>(`/workspaces/${id}/erase-data/`, { method: "POST" });
+}
+
 /** Empty the shop in one call. Owner only; the server enforces that. */
 export function clearStore(mode: "zero" | "delete") {
   return request<ClearResult>("/products/clear/", {

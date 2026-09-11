@@ -1,9 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { AlertTriangle } from "lucide-react";
-import { wipeWorkspace, resetDemo, isDemo } from "@/lib/demo";
-import { saveBusinessProfile } from "@/lib/db";
+import { resetDemo, isDemo } from "@/lib/demo";
+import { eraseWorkspaceData, saveBusinessProfile } from "@/lib/db";
 import { useBusiness } from "@/hooks/useBusiness";
 import { useAuth } from "@/hooks/useAuth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -18,9 +19,16 @@ export const Route = createFileRoute("/_authenticated/settings")({
   head: () => ({
     meta: [
       { title: "Business Settings — SalesPos" },
-      { name: "description", content: "Update branding, receipt text, alert thresholds and workspace data for your SalesPos account." },
+      {
+        name: "description",
+        content:
+          "Update branding, receipt text, alert thresholds and workspace data for your SalesPos account.",
+      },
       { property: "og:title", content: "Business Settings — SalesPos" },
-      { property: "og:description", content: "Update branding, receipt text and alert preferences." },
+      {
+        property: "og:description",
+        content: "Update branding, receipt text and alert preferences.",
+      },
     ],
   }),
   component: SettingsPage,
@@ -33,6 +41,8 @@ function SettingsPage() {
   const set = (k: string, v: unknown) => setForm((f) => ({ ...f, [k]: v }));
 
   const [saving, setSaving] = useState(false);
+  const [erasing, setErasing] = useState(false);
+  const queryClient = useQueryClient();
   // Only the owner may edit; the server enforces the same rule, so letting a
   // salesperson type here would only earn them a 403 on save.
   const locked = !isOwner;
@@ -168,35 +178,58 @@ function SettingsPage() {
 
       {/* Erasing the workspace is the owner's call, never the counter's. */}
       {!locked && (
-      <Card className="border-destructive/40 shadow-[var(--shadow-card)]">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base text-destructive">
-            <AlertTriangle className="size-4" /> Danger zone
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-wrap items-center justify-between gap-3">
-          <p className="max-w-sm text-sm text-muted-foreground">
-            {isDemo()
-              ? "Reload the demo sandbox with fresh sample data."
-              : "Erase all products, sales, expenses and users in this workspace. This cannot be undone."}
-          </p>
-          <Button
-            variant="destructive"
-            onClick={() => {
-              if (isDemo()) {
-                resetDemo();
-                toast.success("Demo data reset");
-                return;
-              }
-              if (!confirm("Erase every record in this workspace?")) return;
-              wipeWorkspace();
-              window.location.href = "/auth";
-            }}
-          >
-            {isDemo() ? "Reset demo data" : "Erase workspace"}
-          </Button>
-        </CardContent>
-      </Card>
+        <Card className="border-destructive/40 shadow-[var(--shadow-card)]">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base text-destructive">
+              <AlertTriangle className="size-4" /> Danger zone
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-wrap items-center justify-between gap-3">
+            <p className="max-w-sm text-sm text-muted-foreground">
+              {isDemo()
+                ? "Reload the demo sandbox with fresh sample data."
+                : "Erase all products, stock, sales, expenses, customers, debts and suppliers in this workspace. Your staff logins and business settings are kept. This cannot be undone."}
+            </p>
+            <Button
+              variant="destructive"
+              disabled={erasing}
+              onClick={async () => {
+                if (isDemo()) {
+                  resetDemo();
+                  toast.success("Demo data reset");
+                  return;
+                }
+                if (
+                  !confirm(
+                    "Erase every record in this workspace?\n\n" +
+                      "Products, stock, sales, expenses, customers, debts and suppliers " +
+                      "are all removed. Staff logins and business settings are kept. " +
+                      "This cannot be undone.",
+                  )
+                ) {
+                  return;
+                }
+                setErasing(true);
+                try {
+                  const erased = await eraseWorkspaceData();
+                  // Every screen is now looking at records that no longer exist.
+                  await queryClient.invalidateQueries();
+                  toast.success("Workspace data erased", {
+                    description: `${erased} record${erased === 1 ? "" : "s"} removed. Your team and settings are untouched.`,
+                  });
+                } catch (err) {
+                  toast.error(
+                    err instanceof Error ? err.message : "Could not erase the workspace data",
+                  );
+                } finally {
+                  setErasing(false);
+                }
+              }}
+            >
+              {isDemo() ? "Reset demo data" : erasing ? "Erasing…" : "Erase all data"}
+            </Button>
+          </CardContent>
+        </Card>
       )}
     </div>
   );

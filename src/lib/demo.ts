@@ -1199,11 +1199,29 @@ export function removeTeamMember(id: string) {
   dbDelete("users", id);
 }
 
-/** Resets the live workspace back to a fresh, empty install. */
-export function wipeWorkspace() {
-  localStorage.removeItem(LIVE_STORE);
-  localStorage.removeItem(SESSION_KEY);
-  emit();
+/**
+ * Empty the business out, keeping the people who run it.
+ *
+ * The local mirror of the server's erase-data endpoint: every table the shop
+ * fills in goes back to empty, while the business profile and the user list
+ * stay exactly as they were. The owner is not signed out, because nothing
+ * about who they are has changed.
+ */
+export function eraseWorkspaceData(): number {
+  const tables = load();
+  const kept = new Set(["business", "users"]);
+  let erased = 0;
+  const next: Tables = {};
+  for (const [name, rows] of Object.entries(tables)) {
+    if (kept.has(name)) {
+      next[name] = rows;
+      continue;
+    }
+    erased += rows.length;
+    next[name] = [];
+  }
+  save(next);
+  return erased;
 }
 
 /* ------------------------------------------------------------------ */

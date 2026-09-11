@@ -169,9 +169,7 @@ function Inventory() {
     // too, and its stock history goes with it.
     if (
       !window.confirm(
-        `Delete "${p.name}" for good?
-
-` +
+        `Delete "${p.name}" for good?\n\n` +
           `It is removed from the store for everyone, including the sales team, ` +
           `along with its stock history. Past sales keep their figures. ` +
           `This cannot be undone.`,
