@@ -1,7 +1,6 @@
-from django.db.models import ProtectedError
 from rest_framework import status
 from rest_framework.decorators import action
-from rest_framework.exceptions import PermissionDenied, ValidationError
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 
 from apps.core.tenancy import WorkspaceViewSet
@@ -35,19 +34,16 @@ class ProductViewSet(WorkspaceViewSet):
         return Response(self.get_serializer(rows, many=True).data)
 
     def perform_destroy(self, instance):
-        """Refuse to take a sale's history with the product.
+        """Remove the item for good — from the owner's shelf and the seller's.
 
-        SaleItem protects the product, so this would otherwise surface as a 500
-        and the owner would be told nothing. Zeroing is the honest alternative,
-        and it is what the danger zone does in bulk.
+        Deletion used to be refused the moment an item had ever been sold, which
+        left the owner unable to clear out what a staff member had typed in. The
+        sale line now carries its own name and figures, so the product row goes
+        and the history it appears on is left reading exactly as it did. The
+        stock ledger and damage reports cascade with it, because they describe a
+        shelf that no longer exists.
         """
-        try:
-            instance.delete()
-        except ProtectedError:
-            raise ValidationError(
-                f"{instance.name} appears on past sales, so deleting it would erase them. "
-                "Set its stock to zero instead."
-            )
+        instance.delete()
 
     @action(detail=False, methods=["post"], url_path="clear")
     def clear(self, request):

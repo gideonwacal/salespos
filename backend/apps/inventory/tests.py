@@ -130,6 +130,7 @@ class ClearStoreTests(TestCase):
             workspace=self.workspace,
             sale=sale,
             product=product,
+            product_name=product.name,
             quantity=1,
             unit_price=Decimal("5000"),
             subtotal=Decimal("5000"),
@@ -154,17 +155,19 @@ class ClearStoreTests(TestCase):
         self.assertEqual(adjustments.count(), 2)
         self.assertEqual(sorted(a.quantity for a in adjustments), [-20, -8])
 
-    def test_delete_removes_products_but_keeps_ones_that_were_sold(self):
+    def test_delete_removes_every_product_including_ones_that_were_sold(self):
         self._sell(self.sugar)
 
         result = clear_store(workspace=self.workspace, mode="delete", performed_by=self.owner)
 
-        self.assertEqual(result["deleted"], 1)
-        self.assertEqual(result["kept"], 1)
-        remaining = list(Product.objects.filter(workspace=self.workspace))
-        self.assertEqual([p.name for p in remaining], ["Sugar 1kg"])
-        # Kept, but emptied — the point of the button was an empty store.
-        self.assertEqual(remaining[0].stock_quantity, 0)
+        self.assertEqual(result["deleted"], 2)
+        self.assertEqual(result["kept"], 0)
+        self.assertFalse(Product.objects.filter(workspace=self.workspace).exists())
+        # The sale it was on survives it, figures and name intact.
+        line = SaleItem.objects.get(workspace=self.workspace)
+        self.assertIsNone(line.product_id)
+        self.assertEqual(line.product_name, "Sugar 1kg")
+        self.assertEqual(line.subtotal, Decimal("5000"))
 
     def test_only_the_owner_can_clear_the_store(self):
         self.client.force_authenticate(self.cashier)
@@ -193,16 +196,52 @@ class ClearStoreTests(TestCase):
             Product.objects.filter(workspace=self.workspace, stock_quantity__gt=0).exists()
         )
 
-    def test_deleting_a_sold_product_explains_itself(self):
+    def test_the_owner_can_delete_a_product_that_has_been_sold(self):
+        """The owner's decision is final, even on stock that has moved."""
         self._sell(self.sugar)
         self.client.force_authenticate(self.owner)
 
         response = self.client.delete(
             f"/api/products/{self.sugar.id}/", **self.headers
         )
-        self.assertEqual(response.status_code, 400)
-        self.assertIn("past sales", str(response.data))
+        self.assertEqual(response.status_code, 204, response.data)
+        self.assertFalse(Product.objects.filter(pk=self.sugar.pk).exists())
+
+        # Gone from the shelf, but the sale still says what was bought and for
+        # how much — deleting an item must not rewrite the books.
+        line = SaleItem.objects.get(workspace=self.workspace)
+        self.assertIsNone(line.product_id)
+        self.assertEqual(line.product_name, "Sugar 1kg")
+        self.assertEqual(line.subtotal, Decimal("5000"))
+
+    def test_a_cashier_still_cannot_delete_a_product(self):
+        """Deletion is the owner's alone; staff add and correct only."""
+        self.client.force_authenticate(self.cashier)
+
+        response = self.client.delete(
+            f"/api/products/{self.sugar.id}/", **self.headers
+        )
+        self.assertEqual(response.status_code, 403)
         self.assertTrue(Product.objects.filter(pk=self.sugar.pk).exists())
+
+    def test_deleting_a_product_takes_its_ledger_with_it(self):
+        """The stock history describes a shelf that no longer exists."""
+        StockTransaction.objects.create(
+            workspace=self.workspace,
+            product=self.sugar,
+            type="stock_in",
+            quantity=5,
+            notes="Delivery",
+        )
+        self.client.force_authenticate(self.owner)
+
+        response = self.client.delete(
+            f"/api/products/{self.sugar.id}/", **self.headers
+        )
+        self.assertEqual(response.status_code, 204, response.data)
+        self.assertFalse(
+            StockTransaction.objects.filter(product_id=self.sugar.pk).exists()
+        )
 
     def test_a_new_product_records_who_added_it(self):
         self.client.force_authenticate(self.cashier)

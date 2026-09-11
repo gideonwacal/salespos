@@ -51,7 +51,7 @@ const COPY: Record<
     word: "DELETE",
     button: "Delete everything",
     blurb:
-      "Removes the products themselves — names, prices, the lot. Items that appear on a past sale are kept and zeroed instead, because deleting one would erase that sale.",
+      "Removes the products themselves — names, prices, the lot — for everyone, the sales team included. Past sales keep their figures and say what was bought, but the items are gone from the store.",
     warning:
       "This cannot be undone. Your product list is gone and has to be entered or imported again.",
   },
@@ -76,8 +76,8 @@ export function DangerZone({ productCount }: { productCount: number }) {
     setBusy(true);
     try {
       const result = await clearStore(mode);
-      // Say what actually happened. "Kept" is the surprising part, and an owner
-      // who is not told will assume the clear half-failed.
+      // Say what actually happened. Nothing is held back any more, but an older
+      // server may still report items it kept, so keep reporting it if so.
       const parts = [`${num(result.zeroed)} item${result.zeroed === 1 ? "" : "s"} zeroed`];
       if (result.deleted) parts.push(`${num(result.deleted)} deleted`);
       if (result.kept) parts.push(`${num(result.kept)} kept — they appear on past sales`);

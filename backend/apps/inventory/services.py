@@ -110,14 +110,13 @@ def clear_store(*, workspace, mode: str, performed_by=None) -> dict:
     stock ledger still explains where the quantity went; a shelf that empties
     with no movement behind it is indistinguishable from theft.
 
-    Products that appear on a past sale are never deleted. SaleItem protects
-    them, and rightly: deleting one would take a line of sales history with it.
-    They are zeroed and reported back as kept.
+    `delete` now means every product, including the ones that have been sold:
+    each sale line keeps its own name and figures, so clearing the shelf leaves
+    the sales history whole. Nothing is kept back, and `kept` stays in the reply
+    as a zero so the shape of the response does not change under the client.
     """
     if mode not in ("zero", "delete"):
         raise ValueError("mode must be 'zero' or 'delete'")
-
-    from apps.sales.models import SaleItem
 
     products = list(Product.objects.select_for_update().filter(workspace=workspace))
 
@@ -140,15 +139,11 @@ def clear_store(*, workspace, mode: str, performed_by=None) -> dict:
     if mode == "zero":
         return {"mode": mode, "zeroed": zeroed, "deleted": 0, "kept": 0}
 
-    sold = set(
-        SaleItem.objects.filter(workspace=workspace).values_list("product_id", flat=True)
-    )
-    removable = [p.pk for p in products if p.pk not in sold]
-    Product.objects.filter(workspace=workspace, pk__in=removable).delete()
+    Product.objects.filter(workspace=workspace).delete()
 
     return {
         "mode": mode,
         "zeroed": zeroed,
-        "deleted": len(removable),
-        "kept": len(products) - len(removable),
+        "deleted": len(products),
+        "kept": 0,
     }

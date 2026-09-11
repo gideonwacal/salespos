@@ -1312,13 +1312,7 @@ function StockDetail({ products }: { products: Product[] }) {
   if (!products.length) return <Empty what="stock" />;
 
   const rows = products
-    .map((p) => {
-      const cost = Number(p.unit_buying_price) * Number(p.stock_quantity);
-      const retail = Number(p.unit_selling_price) * Number(p.stock_quantity);
-      // What the shelf would make at the list price. Not earned, and never
-      // added to the gross profit the shop has actually taken.
-      return { p, cost, retail, profit: retail - cost };
-    })
+    .map((p) => ({ p, cost: Number(p.unit_buying_price) * Number(p.stock_quantity) }))
     .sort((a, b) => b.cost - a.cost)
     .slice(0, 20);
 
@@ -1339,34 +1333,42 @@ function StockDetail({ products }: { products: Product[] }) {
         <Stat label="Profit held in stock" value={ugx(totals.retail - totals.cost)} />
       </div>
 
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Item</TableHead>
-            <TableHead className="text-right">Qty</TableHead>
-            <TableHead className="text-right">At buying price</TableHead>
-            <TableHead className="text-right">At retail</TableHead>
-            <TableHead className="text-right">Profit in stock</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {rows.map(({ p, cost, retail, profit }) => (
-            <TableRow key={p.id}>
-              <TableCell className="font-medium">{p.name}</TableCell>
-              <TableCell className="text-right">{num(p.stock_quantity)}</TableCell>
-              <Money>{ugx(cost)}</Money>
-              <TableCell className="tabular text-right text-muted-foreground">
-                {ugx(retail)}
-              </TableCell>
-              <TableCell
-                className={`tabular text-right font-semibold ${profit < 0 ? "text-destructive" : ""}`}
-              >
-                {ugx(profit)}
-              </TableCell>
+      {/* The same price list the sales team reads, so the owner and the counter
+          are never quoting different figures: what one unit costs to bring in,
+          and what it goes out for retail and wholesale. The stock value the
+          tile is about follows on the right. */}
+      <div className="overflow-x-auto">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Item</TableHead>
+              <TableHead>Category</TableHead>
+              <TableHead className="text-right">Supply price per quantity</TableHead>
+              <TableHead className="text-right">Retail selling price</TableHead>
+              <TableHead className="text-right">Wholesale selling price</TableHead>
+              <TableHead className="text-right">Qty</TableHead>
+              <TableHead className="text-right">At buying price</TableHead>
             </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+          </TableHeader>
+          <TableBody>
+            {rows.map(({ p, cost }) => (
+              <TableRow key={p.id}>
+                <TableCell className="font-medium">{p.name}</TableCell>
+                <TableCell className="text-muted-foreground">{p.category}</TableCell>
+                <TableCell className="tabular text-right">
+                  {ugx(p.supplier_price ?? p.unit_buying_price)}
+                </TableCell>
+                <TableCell className="tabular text-right">{ugx(p.unit_selling_price)}</TableCell>
+                <TableCell className="tabular text-right">
+                  {p.wholesale_price ? ugx(p.wholesale_price) : "—"}
+                </TableCell>
+                <TableCell className="text-right">{num(p.stock_quantity)}</TableCell>
+                <Money>{ugx(cost)}</Money>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
       {products.length > 20 && (
         <p className="text-xs text-muted-foreground">
           Showing the 20 highest-value items of {num(products.length)}.

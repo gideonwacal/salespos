@@ -193,6 +193,17 @@ export async function saveBusinessProfile(patch: Partial<Business>) {
 }
 
 /**
+ * What a product is called right now, for stamping onto a sale line.
+ *
+ * The line keeps the name rather than a reference to it, so renaming an item —
+ * or deleting it outright, which the owner is allowed to do — never changes
+ * what a past sale says was bought.
+ */
+function nameOf(products: Row[], productId: string): string {
+  return String(products.find((p) => String(p.id) === productId)?.name ?? "");
+}
+
+/**
  * The lines of one sale, whichever backend holds them.
  *
  * The API nests them on the sale as {product, product_name, ...}; the local
@@ -215,8 +226,10 @@ export function saleLines(sale: { id: string; items?: unknown[] }): SaleLine[] {
     .filter((line) => line.sale_id === sale.id)
     .map((line) => ({
       product_id: String(line.product_id ?? ""),
+      // The name stamped on the line at checkout wins: the product may since
+      // have been renamed or deleted, and neither rewrites this sale.
       product_name: String(
-        products.find((p) => p.id === line.product_id)?.name ?? "Item",
+        line.product_name || products.find((p) => p.id === line.product_id)?.name || "Removed item",
       ),
       quantity: Number(line.quantity ?? 0),
       unit_price: Number(line.unit_price ?? 0),
@@ -254,7 +267,7 @@ export function saleLinesBySale(
     const list = out.get(saleId) ?? [];
     list.push({
       product_id: productId,
-      product_name: names.get(productId) ?? "Item",
+      product_name: String(line.product_name || names.get(productId) || "Removed item"),
       quantity: Number(line.quantity ?? 0),
       unit_price: Number(line.unit_price ?? 0),
       unit_cost: Number(line.unit_cost ?? 0),
@@ -320,7 +333,11 @@ export async function amendSaleRows(
   for (const line of oldLines) dbDelete("sale_items", String(line.id));
   dbInsert(
     "sale_items",
-    input.lines.map((l) => ({ ...l, sale_id: saleId })),
+    input.lines.map((l) => ({
+      ...l,
+      sale_id: saleId,
+      product_name: nameOf(products, l.product_id),
+    })),
   );
 
   dbUpdate("sales", saleId, {
@@ -385,9 +402,14 @@ export async function checkoutSale(input: {
     },
   ]);
 
+  const named = dbSelect<Row>("products");
   dbInsert(
     "sale_items",
-    input.lines.map((l) => ({ ...l, sale_id: sale.id as string })),
+    input.lines.map((l) => ({
+      ...l,
+      sale_id: sale.id as string,
+      product_name: nameOf(named, l.product_id),
+    })),
   );
   return sale;
 }
@@ -401,16 +423,14 @@ export async function checkoutSale(input: {
  * went — a shelf that empties with no movement behind it reads exactly like
  * theft.
  *
- * Products that appear on a past sale are kept whichever mode is chosen:
- * deleting one would take a line of sales history with it. The count comes
- * back as `kept` so the owner is told, rather than left wondering why some
- * items survived.
+ * "delete" means every item, sold or not: each sale line carries its own name
+ * and figures, so clearing the shelf leaves the sales history whole. `kept`
+ * stays in the result as a zero, mirroring the server.
  */
 export async function clearStore(mode: "zero" | "delete"): Promise<ClearResult> {
   if (isServerTable("products")) return clearStoreApi(mode);
 
   const products = dbSelect<Row>("products");
-  const sold = new Set(dbSelect<Row>("sale_items").map((line) => String(line.product_id)));
 
   let zeroed = 0;
   for (const product of products) {
@@ -433,8 +453,7 @@ export async function clearStore(mode: "zero" | "delete"): Promise<ClearResult> 
 
   if (mode === "zero") return { mode, zeroed, deleted: 0, kept: 0 };
 
-  const removable = products.filter((p) => !sold.has(String(p.id)));
-  for (const product of removable) dbDelete("products", String(product.id));
+  for (const product of products) dbDelete("products", String(product.id));
 
-  return { mode, zeroed, deleted: removable.length, kept: products.length - removable.length };
+  return { mode, zeroed, deleted: products.length, kept: 0 };
 }

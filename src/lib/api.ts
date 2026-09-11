@@ -352,7 +352,7 @@ export type ClearResult = {
   mode: "zero" | "delete";
   zeroed: number;
   deleted: number;
-  /** Products kept because they appear on a past sale. */
+  /** Products held back. Nothing is held back now, but older servers may report some. */
   kept: number;
 };
 

@@ -44,9 +44,9 @@ export const Route = createFileRoute("/_authenticated/inventory")({
   head: () => ({
     meta: [
       { title: "Inventory Master Grid — SalesPos" },
-      { name: "description", content: "Stock levels, buying and selling prices, margins and reorder alerts with CSV import/export." },
+      { name: "description", content: "Stock levels, supply and selling prices, and reorder alerts with CSV import/export." },
       { property: "og:title", content: "Inventory Master Grid — SalesPos" },
-      { property: "og:description", content: "Stock levels, buying and selling prices, margins and reorder alerts with CSV import/export." },
+      { property: "og:description", content: "Stock levels, supply and selling prices, and reorder alerts with CSV import/export." },
     ],
   }),
   component: Inventory,
@@ -157,17 +157,29 @@ function Inventory() {
   };
 
   const remove = async (p: Product) => {
-    if (!window.confirm(`Delete "${p.name}"? This cannot be undone.`)) return;
+    // Say plainly how far this reaches: the item leaves the sellers' screens
+    // too, and its stock history goes with it.
+    if (
+      !window.confirm(
+        `Delete "${p.name}" for good?
+
+` +
+          `It is removed from the store for everyone, including the sales team, ` +
+          `along with its stock history. Past sales keep their figures. ` +
+          `This cannot be undone.`,
+      )
+    )
+      return;
     try {
       await deleteRow("products", p.id);
       toast.success("Item removed");
       queryClient.invalidateQueries({ queryKey: ["products"] });
     } catch (err) {
-      // Without this the row simply stayed put and said nothing — the server
-      // refuses a delete for two good reasons (the item is on a past sale, or
-      // the person is not the owner) and neither ever reached the screen.
+      // Without this the row simply stayed put and said nothing. The only
+      // remaining refusal is a staff member trying to delete, which is the
+      // owner's call alone — so say that rather than leaving a dead button.
       toast.error(err instanceof Error ? err.message : "Could not delete that item", {
-        description: `${p.name} is still in the store. Set its stock to zero if it cannot be removed.`,
+        description: `${p.name} is still in the store.`,
       });
     }
   };
@@ -365,10 +377,9 @@ function Inventory() {
               <TableRow>
                 <TableHead>Item</TableHead>
                 <TableHead>Category</TableHead>
-                <TableHead className="text-right">Buying</TableHead>
-                <TableHead className="text-right">Retail</TableHead>
-                <TableHead className="text-right">Wholesale</TableHead>
-                <TableHead className="text-right">Margin</TableHead>
+                <TableHead className="text-right">Supply price per quantity</TableHead>
+                <TableHead className="text-right">Retail selling price</TableHead>
+                <TableHead className="text-right">Wholesale selling price</TableHead>
                 <TableHead className="text-right">Stock</TableHead>
                 <TableHead>Expiry</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
@@ -376,33 +387,22 @@ function Inventory() {
             </TableHeader>
             <TableBody>
               {rows.map((p) => {
-                const margin =
-                  Number(p.unit_selling_price) > 0
-                    ? ((Number(p.unit_selling_price) - Number(p.unit_buying_price)) /
-                        Number(p.unit_selling_price)) *
-                      100
-                    : 0;
                 const low = p.stock_quantity <= p.reorder_level;
                 return (
                   <TableRow key={p.id}>
                     <TableCell className="font-medium">{p.name}</TableCell>
                     <TableCell className="text-muted-foreground">{p.category}</TableCell>
+                    {/* What one unit costs to bring in. The supplier's own
+                        invoice price when it is known, and the buying price the
+                        stock is valued at otherwise. */}
                     <TableCell className="tabular text-right">
-                      {ugx(p.unit_buying_price)}
+                      {ugx(p.supplier_price ?? p.unit_buying_price)}
                     </TableCell>
                     <TableCell className="tabular text-right">
                       {ugx(p.unit_selling_price)}
                     </TableCell>
                     <TableCell className="tabular text-right">
                       {p.wholesale_price ? ugx(p.wholesale_price) : "—"}
-                    </TableCell>
-                    <TableCell
-                      className={cn(
-                        "tabular text-right font-semibold",
-                        margin >= 15 ? "text-success" : "text-warning-foreground",
-                      )}
-                    >
-                      {margin.toFixed(1)}%
                     </TableCell>
                     <TableCell className="text-right">
                       <Badge

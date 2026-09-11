@@ -4,7 +4,19 @@ from apps.sales.models import Sale, SaleItem
 
 
 class SaleItemSerializer(serializers.ModelSerializer):
-    product_name = serializers.CharField(source="product.name", read_only=True)
+    product_name = serializers.SerializerMethodField()
+
+    def get_product_name(self, obj) -> str:
+        """The name the line was sold under.
+
+        The snapshot is the truth: the product may since have been renamed or
+        deleted outright, and neither should change what this sale says. The
+        live product is only a fallback for lines written before the snapshot
+        column existed.
+        """
+        if obj.product_name:
+            return obj.product_name
+        return obj.product.name if obj.product_id else "Removed item"
 
     class Meta:
         model = SaleItem

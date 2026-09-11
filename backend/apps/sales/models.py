@@ -34,9 +34,20 @@ class Sale(WorkspaceScoped):
 
 class SaleItem(WorkspaceScoped):
     sale = models.ForeignKey(Sale, on_delete=models.CASCADE, related_name="items")
+    # The product may be deleted out from under this line: the owner is allowed
+    # to remove an item from the shop for good, and a sale that already happened
+    # must not stand in the way of that. The line keeps its own numbers and the
+    # name below, so the history still reads correctly once the shelf is gone.
     product = models.ForeignKey(
-        "inventory.Product", on_delete=models.PROTECT, related_name="sale_items"
+        "inventory.Product",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="sale_items",
     )
+    # What the item was called when it was sold. Snapshotted rather than looked
+    # up, so a rename never rewrites history and a deletion never erases it.
+    product_name = models.CharField(max_length=200, blank=True, default="")
     quantity = models.PositiveIntegerField()
     unit_price = models.DecimalField(max_digits=14, decimal_places=2)
     unit_cost = models.DecimalField(max_digits=14, decimal_places=2, default=0)
@@ -47,4 +58,4 @@ class SaleItem(WorkspaceScoped):
         ordering = ["created_at"]
 
     def __str__(self):
-        return f"{self.quantity} x {self.product_id}"
+        return f"{self.quantity} x {self.product_name or self.product_id}"
