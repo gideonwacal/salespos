@@ -23,6 +23,7 @@ import {
   isDemo,
   planById,
   saveBusiness,
+  seatLimit,
   updateTeamMember,
   type AppRole,
   type Business,
@@ -120,7 +121,8 @@ export async function addStaff(input: {
 
   // The seat limit is a plan rule, not a server rule, so it is checked here for
   // both backends rather than duplicated in Django.
-  const seats = planById(dbSelect<Business>("business")[0]?.plan ?? "starter").seats;
+  const biz = dbSelect<Business>("business")[0];
+  const seats = biz ? seatLimit(biz) : planById("starter").seats;
   const current = await selectTable<StaffRow>("users");
   if (current.filter((m) => m.active !== false).length >= seats) {
     throw new Error(`Your plan allows ${seats} users. Upgrade to add more.`);

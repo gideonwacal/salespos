@@ -953,6 +953,19 @@ export function trialStatus(business: Business): TrialStatus {
   };
 }
 
+/**
+ * What the workspace can actually use right now. A plan's module list and seat
+ * count only bind once the 14-day trial is over — until then the shop gets
+ * everything, so it can try the whole product before choosing a package.
+ */
+export function canUseModule(business: Business, mod: ModuleId) {
+  return trialStatus(business).onTrial || planHasModule(business.plan, mod);
+}
+
+export function seatLimit(business: Business) {
+  return trialStatus(business).onTrial ? Infinity : planById(business.plan).seats;
+}
+
 /** Mock checkout — records a paid subscription for the given number of months. */
 export function activateSubscription(plan: PlanId, months = 1) {
   const until = new Date();
@@ -1171,7 +1184,7 @@ export function addTeamMember(input: {
   if (users.some((u) => u.email.toLowerCase() === input.email.trim().toLowerCase())) {
     throw new Error("That email is already in use");
   }
-  const seats = planById(getBusiness().plan).seats;
+  const seats = seatLimit(getBusiness());
   if (users.filter((u) => u.active).length >= seats) {
     throw new Error(`Your plan allows ${seats} users. Upgrade to add more.`);
   }

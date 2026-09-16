@@ -3,7 +3,7 @@ import {
   isDemo,
   getSessionUser,
   getBusiness,
-  planHasModule,
+  canUseModule,
   trialStatus,
   type ModuleId,
 } from "@/lib/demo";
@@ -36,7 +36,7 @@ export const Route = createFileRoute("/_authenticated")({
       throw redirect({ to: "/billing" });
     }
     const hit = ROUTE_MODULES.find(([p]) => location.pathname.startsWith(p));
-    if (hit && !planHasModule(business.plan, hit[1])) {
+    if (hit && !canUseModule(business, hit[1])) {
       throw redirect({ to: "/billing" });
     }
   },

@@ -76,7 +76,10 @@ function Billing() {
       <div>
         <h1 className="text-2xl font-extrabold">Plan & billing</h1>
         <p className="text-sm text-muted-foreground">
-          {staff.length} of {current.seats === 999 ? "unlimited" : current.seats} seats used ·{" "}
+          {status.onTrial
+            ? `${staff.length} seat${staff.length === 1 ? "" : "s"} used (unlimited during trial)`
+            : `${staff.length} of ${current.seats === 999 ? "unlimited" : current.seats} seats used`}{" "}
+          ·{" "}
           {status.subscribed
             ? `subscription active until ${shortDate(business.paid_until ?? "")}`
             : status.onTrial
@@ -96,7 +99,7 @@ function Billing() {
             <p className="font-medium">
               {status.expired
                 ? "Your 14-day free trial has ended. Choose a package below to keep using SalesPos."
-                : `You are on the free trial — ${status.daysLeft} day${status.daysLeft === 1 ? "" : "s"} remaining.`}
+                : `You are on the free trial — ${status.daysLeft} day${status.daysLeft === 1 ? "" : "s"} remaining. Every module and unlimited seats are open until ${shortDate(business.trial_ends)}; after that, what you can use depends on the package you choose.`}
             </p>
             <Badge
               className={cn(
@@ -168,6 +171,11 @@ function Billing() {
                   <span className="text-sm font-normal text-muted-foreground">/month</span>
                 </p>
                 <p className="text-xs text-muted-foreground">{plan.blurb}</p>
+                {!status.subscribed && (
+                  <p className="text-[11px] font-medium text-muted-foreground">
+                    Limits below apply once your 14-day trial ends.
+                  </p>
+                )}
               </CardHeader>
               <CardContent className="flex flex-1 flex-col justify-between gap-4">
                 <ul className="space-y-2 text-sm">
@@ -199,7 +207,9 @@ function Billing() {
         <CardHeader>
           <CardTitle className="text-base">Modules included per package</CardTitle>
           <p className="text-xs text-muted-foreground">
-            Locked modules are hidden from the sidebar until the plan is upgraded.
+            {status.onTrial
+              ? "Everything is unlocked during your 14-day trial. Once it ends, modules outside your package are hidden from the sidebar until you upgrade."
+              : "Locked modules are hidden from the sidebar until the plan is upgraded."}
           </p>
         </CardHeader>
         <CardContent className="overflow-x-auto">
