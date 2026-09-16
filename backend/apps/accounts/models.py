@@ -9,7 +9,7 @@ import uuid
 from datetime import timedelta
 
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
-from django.db import models
+from django.db import models, transaction
 from django.utils import timezone
 
 
@@ -141,3 +141,74 @@ class Membership(models.Model):
 
     def __str__(self):
         return f"{self.user.email} @ {self.workspace.name} ({self.role})"
+
+
+# Monthly price in shillings. Mirrors `price_ugx` on PLANS in src/lib/demo.ts;
+# the server prices a payment itself so the browser can't name its own amount.
+PLAN_PRICES_UGX = {"starter": 70_000, "growth": 180_000, "enterprise": 365_000}
+MONTHS_CHOICES = [(1, "1 month"), (3, "3 months"), (6, "6 months"), (12, "12 months")]
+
+
+class SubscriptionPayment(models.Model):
+    """A shop's claim that it sent the subscription by mobile money.
+
+    Nothing changes on the workspace until someone checks the money actually
+    arrived and approves it in the admin — a transaction ID typed into a form
+    proves nothing on its own.
+    """
+
+    STATUS_CHOICES = [
+        ("pending", "Waiting for confirmation"),
+        ("approved", "Approved"),
+        ("rejected", "Rejected"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    workspace = models.ForeignKey(
+        Workspace, on_delete=models.CASCADE, related_name="subscription_payments"
+    )
+    submitted_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+    )
+    plan = models.CharField(max_length=20, choices=Workspace.PLAN_CHOICES)
+    months = models.PositiveSmallIntegerField(choices=MONTHS_CHOICES, default=1)
+    amount = models.DecimalField(max_digits=12, decimal_places=0)
+    currency = models.CharField(max_length=8, default="UGX")
+    network = models.CharField(max_length=20, default="mtn_momo")
+    payer_phone = models.CharField(max_length=40)
+    transaction_id = models.CharField(max_length=60, unique=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending")
+    note = models.CharField(max_length=255, blank=True, default="")
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "subscription_payments"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.workspace.name} · {self.plan} x{self.months} · {self.transaction_id}"
+
+    @transaction.atomic
+    def approve(self):
+        """Activate the plan, adding the paid months on top of any time left."""
+        if self.status == "approved":
+            return
+        workspace = Workspace.objects.select_for_update().get(pk=self.workspace_id)
+        now = timezone.now()
+        start = max(now, workspace.paid_until) if workspace.paid_until else now
+        workspace.plan = self.plan
+        workspace.subscribed = True
+        workspace.paid_until = start + timedelta(days=30 * self.months)
+        workspace.save(update_fields=["plan", "subscribed", "paid_until", "updated_at"])
+        self.status = "approved"
+        self.reviewed_at = now
+        self.save(update_fields=["status", "reviewed_at"])
+
+    def reject(self, note=""):
+        if self.status != "pending":
+            return
+        self.status = "rejected"
+        self.note = note or self.note
+        self.reviewed_at = timezone.now()
+        self.save(update_fields=["status", "note", "reviewed_at"])

@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.db import transaction
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
@@ -7,12 +8,13 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework_simplejwt.views import TokenObtainPairView
 
-from apps.accounts.models import Membership, Workspace
+from apps.accounts.models import PLAN_PRICES_UGX, Membership, SubscriptionPayment, Workspace
 from apps.accounts.serializers import (
     InviteMemberSerializer,
     MembershipSerializer,
     MeSerializer,
     RegisterSerializer,
+    SubscriptionPaymentSerializer,
     WorkspaceSerializer,
 )
 from apps.core.permissions import IsOwnerOrReadOnly, IsWorkspaceMember
@@ -181,3 +183,44 @@ class MembershipViewSet(viewsets.ModelViewSet):
         membership.active = False
         membership.save(update_fields=["active"])
         return Response(MembershipSerializer(membership).data)
+
+
+class BillingInfoView(APIView):
+    """GET /api/billing/ — where to send the subscription, and what it costs."""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        return Response(
+            {
+                "network": settings.SUBSCRIPTION_MOMO_NETWORK,
+                "number": settings.SUBSCRIPTION_MOMO_NUMBER,
+                "name": settings.SUBSCRIPTION_MOMO_NAME,
+                "currency": "UGX",
+                "prices": PLAN_PRICES_UGX,
+            }
+        )
+
+
+class SubscriptionPaymentViewSet(viewsets.ModelViewSet):
+    """The owner reports a mobile money payment; approval happens in the admin."""
+
+    serializer_class = SubscriptionPaymentSerializer
+    permission_classes = [IsAuthenticated, IsWorkspaceMember, IsOwnerOrReadOnly]
+    http_method_names = ["get", "post", "head", "options"]
+
+    def initial(self, request, *args, **kwargs):
+        workspace, role = resolve_workspace(request)
+        request.workspace = workspace
+        request.workspace_role = role
+        super().initial(request, *args, **kwargs)
+
+    def get_queryset(self):
+        return SubscriptionPayment.objects.filter(workspace=self.request.workspace)
+
+    def perform_create(self, serializer):
+        if not settings.SUBSCRIPTION_MOMO_NUMBER:
+            self.permission_denied(
+                self.request, message="Subscription payments are not set up yet."
+            )
+        serializer.save(workspace=self.request.workspace, submitted_by=self.request.user)

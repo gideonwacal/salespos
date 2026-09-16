@@ -190,3 +190,9 @@ CORS_ALLOW_HEADERS = (
     "user-agent",
     "x-workspace",
 )
+
+# Where shops send their monthly subscription. Shown on the billing page; each
+# payment is confirmed by hand in the Django admin before the plan activates.
+SUBSCRIPTION_MOMO_NETWORK = "MTN Mobile Money"
+SUBSCRIPTION_MOMO_NUMBER = os.environ.get("SUBSCRIPTION_MOMO_NUMBER", "")
+SUBSCRIPTION_MOMO_NAME = os.environ.get("SUBSCRIPTION_MOMO_NAME", "")

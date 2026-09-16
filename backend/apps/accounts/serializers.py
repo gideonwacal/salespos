@@ -2,7 +2,13 @@ from django.contrib.auth.password_validation import validate_password
 from django.db import transaction
 from rest_framework import serializers
 
-from apps.accounts.models import Membership, User, Workspace
+from apps.accounts.models import (
+    PLAN_PRICES_UGX,
+    Membership,
+    SubscriptionPayment,
+    User,
+    Workspace,
+)
 
 
 class WorkspaceSerializer(serializers.ModelSerializer):
@@ -33,7 +39,58 @@ class WorkspaceSerializer(serializers.ModelSerializer):
             "configured",
             "created_at",
         ]
-        read_only_fields = ["id", "created_at"]
+        # What a shop has paid for only ever changes through an approved
+        # SubscriptionPayment, never by the shop editing its own profile.
+        read_only_fields = ["id", "created_at", "plan", "trial_ends", "subscribed", "paid_until"]
+
+
+class SubscriptionPaymentSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SubscriptionPayment
+        fields = [
+            "id",
+            "plan",
+            "months",
+            "amount",
+            "currency",
+            "network",
+            "payer_phone",
+            "transaction_id",
+            "status",
+            "note",
+            "reviewed_at",
+            "created_at",
+        ]
+        read_only_fields = [
+            "id",
+            "amount",
+            "currency",
+            "network",
+            "status",
+            "note",
+            "reviewed_at",
+            "created_at",
+        ]
+
+    def validate_transaction_id(self, value):
+        value = value.strip().upper()
+        if len(value) < 6:
+            raise serializers.ValidationError("Enter the transaction ID from the MTN message.")
+        if SubscriptionPayment.objects.filter(transaction_id=value).exists():
+            raise serializers.ValidationError("That transaction ID has already been submitted.")
+        return value
+
+    def validate_payer_phone(self, value):
+        value = value.strip()
+        if sum(ch.isdigit() for ch in value) < 9:
+            raise serializers.ValidationError("Enter the phone number the money was sent from.")
+        return value
+
+    def create(self, validated_data):
+        validated_data["amount"] = (
+            PLAN_PRICES_UGX[validated_data["plan"]] * validated_data["months"]
+        )
+        return super().create(validated_data)
 
 
 class UserSerializer(serializers.ModelSerializer):

@@ -383,3 +383,55 @@ export function clearStore(mode: "zero" | "delete") {
     body: JSON.stringify({ mode }),
   });
 }
+
+/* ------------------------------------------------------------------ */
+/* subscription billing                                                */
+/* ------------------------------------------------------------------ */
+
+export type BillingInfo = {
+  network: string;
+  /** Empty until SUBSCRIPTION_MOMO_NUMBER is set on the server. */
+  number: string;
+  name: string;
+  currency: string;
+  prices: Record<string, number>;
+};
+
+export type SubscriptionPayment = {
+  id: string;
+  plan: string;
+  months: number;
+  amount: string;
+  currency: string;
+  network: string;
+  payer_phone: string;
+  transaction_id: string;
+  status: "pending" | "approved" | "rejected";
+  note: string;
+  reviewed_at: string | null;
+  created_at: string;
+};
+
+export function fetchBillingInfo() {
+  return request<BillingInfo>("/billing/");
+}
+
+export async function listSubscriptionPayments() {
+  const data = await request<Paginated<SubscriptionPayment> | SubscriptionPayment[]>(
+    "/subscription-payments/",
+  );
+  return Array.isArray(data) ? data : (data.results ?? []);
+}
+
+/** Owner only. The server prices it and holds it until the payment is confirmed. */
+export function submitSubscriptionPayment(input: {
+  plan: string;
+  months: number;
+  payer_phone: string;
+  transaction_id: string;
+}) {
+  return request<SubscriptionPayment>("/subscription-payments/", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}

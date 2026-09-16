@@ -1,11 +1,19 @@
 """Auth and multi-tenant isolation — the RLS replacement."""
 
+from datetime import timedelta
 from decimal import Decimal
 
+from django.test import override_settings
 from django.urls import reverse
 from rest_framework.test import APITestCase
 
-from apps.accounts.models import Membership, User, Workspace
+from apps.accounts.models import (
+    PLAN_PRICES_UGX,
+    Membership,
+    SubscriptionPayment,
+    User,
+    Workspace,
+)
 from apps.inventory.models import Product
 
 
@@ -170,3 +178,68 @@ class RolePermissionTests(APITestCase):
         self.client.force_authenticate(user=stranger)
         response = self.client.get("/api/products/")
         self.assertEqual(response.status_code, 403)
+
+
+@override_settings(SUBSCRIPTION_MOMO_NUMBER="0770000000", SUBSCRIPTION_MOMO_NAME="Test")
+class SubscriptionPaymentTests(APITestCase):
+    """Shops report a mobile money payment; only an approval changes the plan."""
+
+    def setUp(self):
+        self.owner = User.objects.create_user(email="owner@shop.com", password="sup3rsecret!")
+        self.manager = User.objects.create_user(email="mgr@shop.com", password="sup3rsecret!")
+        self.workspace = Workspace.objects.create(name="Shop")
+        Membership.objects.create(user=self.owner, workspace=self.workspace, role="owner")
+        Membership.objects.create(user=self.manager, workspace=self.workspace, role="manager")
+
+    def submit(self, user, **overrides):
+        self.client.force_authenticate(user=user)
+        body = {
+            "plan": "growth",
+            "months": 3,
+            "payer_phone": "0771 234 567",
+            "transaction_id": "abc123456",
+            "amount": 1,
+            **overrides,
+        }
+        return self.client.post("/api/subscription-payments/", body, format="json")
+
+    def test_owner_submission_is_priced_by_the_server_and_stays_pending(self):
+        response = self.submit(self.owner)
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(Decimal(response.data["amount"]), PLAN_PRICES_UGX["growth"] * 3)
+        self.assertEqual(response.data["status"], "pending")
+        self.assertEqual(response.data["transaction_id"], "ABC123456")
+        self.workspace.refresh_from_db()
+        self.assertFalse(self.workspace.subscribed)
+
+    def test_manager_cannot_submit(self):
+        self.assertEqual(self.submit(self.manager).status_code, 403)
+
+    def test_a_transaction_id_can_only_be_used_once(self):
+        self.submit(self.owner)
+        self.assertEqual(self.submit(self.owner, transaction_id="ABC123456").status_code, 400)
+
+    def test_approval_activates_the_plan_and_stacks_months(self):
+        self.submit(self.owner)
+        payment = SubscriptionPayment.objects.get()
+        payment.approve()
+        self.workspace.refresh_from_db()
+        self.assertTrue(self.workspace.subscribed)
+        self.assertEqual(self.workspace.plan, "growth")
+        first_until = self.workspace.paid_until
+
+        self.submit(self.owner, transaction_id="XYZ987654", months=1)
+        SubscriptionPayment.objects.get(transaction_id="XYZ987654").approve()
+        self.workspace.refresh_from_db()
+        self.assertEqual(self.workspace.paid_until, first_until + timedelta(days=30))
+
+    def test_owner_cannot_mark_their_own_workspace_as_paid(self):
+        self.client.force_authenticate(user=self.owner)
+        self.client.patch(
+            f"/api/workspaces/{self.workspace.id}/",
+            {"subscribed": True, "plan": "enterprise"},
+            format="json",
+        )
+        self.workspace.refresh_from_db()
+        self.assertFalse(self.workspace.subscribed)
+        self.assertEqual(self.workspace.plan, "starter")

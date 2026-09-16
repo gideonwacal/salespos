@@ -1,20 +1,29 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Check, Lightbulb, Minus, Sparkles } from "lucide-react";
+import { Check, Lightbulb, Minus, Smartphone } from "lucide-react";
 import {
   PLANS,
   planById,
   planHasModule,
   trialStatus,
   activateSubscription,
+  isDemo,
+  mergeServerBusiness,
   type ModuleId,
   type PlanId,
 } from "@/lib/demo";
+import { fetchBillingInfo, fetchMe, listSubscriptionPayments } from "@/lib/api";
+import { businessFrom } from "@/lib/auth";
+import { isServerTable } from "@/lib/db";
+import { MomoPaymentDialog } from "@/components/MomoPaymentDialog";
+import { useAuth } from "@/hooks/useAuth";
 import { useBusiness } from "@/hooks/useBusiness";
 import { useStaff, useCustomers, useDebts, useQuotations } from "@/lib/data";
 import { useIndustry } from "@/hooks/useIndustry";
 import { recommendPlan } from "@/lib/planAdvice";
-import { shortDate } from "@/lib/format";
+import { moneyIn, shortDate } from "@/lib/format";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -66,9 +75,44 @@ function Billing() {
   });
   const advised = planById(advice.recommended);
 
+  const { isOwner } = useAuth();
+  const queryClient = useQueryClient();
+  const live = isServerTable("business");
+  const [paying, setPaying] = useState<PlanId | null>(null);
+
+  const { data: billingInfo } = useQuery({
+    queryKey: ["billing-info"],
+    queryFn: fetchBillingInfo,
+    enabled: live,
+  });
+  const { data: payments = [] } = useQuery({
+    queryKey: ["subscription-payments"],
+    enabled: live,
+    refetchOnWindowFocus: true,
+    queryFn: async () => {
+      const rows = await listSubscriptionPayments();
+      // Approval happens in the admin, not here, so pick up the plan it
+      // activated whenever the payment list is looked at again.
+      const me = await fetchMe();
+      if (me.active_workspace) mergeServerBusiness(businessFrom(me.active_workspace));
+      return rows;
+    },
+  });
+  const pending = payments.filter((p) => p.status === "pending");
+
   const pay = (id: PlanId) => {
-    activateSubscription(id, 1);
-    toast.success(`${planById(id).name} plan activated — thank you!`);
+    // The demo is a sales pitch with no server behind it, so it still
+    // activates instantly.
+    if (isDemo()) {
+      activateSubscription(id, 1);
+      toast.success(`${planById(id).name} plan activated — thank you!`);
+      return;
+    }
+    if (!live) {
+      toast.error("Paying needs an online account. Connect to the internet and sign in again.");
+      return;
+    }
+    setPaying(id);
   };
 
   return (
@@ -116,6 +160,21 @@ function Billing() {
       )}
 
 
+      {pending.map((p) => (
+        <Card key={p.id} className="border-primary shadow-[var(--shadow-card)]">
+          <CardContent className="flex flex-wrap items-center justify-between gap-3 pt-6 text-sm">
+            <p className="font-medium">
+              We&apos;ve got your payment of {moneyIn(Number(p.amount), p.currency)} for{" "}
+              {planById(p.plan as PlanId).name} ({p.transaction_id}). Your plan activates as soon
+              as it&apos;s confirmed.
+            </p>
+            <Badge variant="outline" className="border-primary/40 text-primary">
+              Confirming
+            </Badge>
+          </CardContent>
+        </Card>
+      ))}
+
       <Card
         className={cn(
           "shadow-[var(--shadow-card)]",
@@ -143,8 +202,8 @@ function Billing() {
             ))}
           </ul>
           {advice.isUpgrade && (
-            <Button size="sm" onClick={() => pay(advice.recommended)}>
-              Move to {advised.name} &mdash; ${advised.price}/month
+            <Button size="sm" disabled={!isOwner} onClick={() => pay(advice.recommended)}>
+              Move to {advised.name} &mdash; {moneyIn(advised.price_ugx, "UGX")}/month
             </Button>
           )}
         </CardContent>
@@ -166,8 +225,8 @@ function Billing() {
                   <CardTitle className="text-base">{plan.name}</CardTitle>
                   {active && <Badge className="border-0 bg-success text-success-foreground">Current</Badge>}
                 </div>
-                <p className="text-3xl font-extrabold">
-                  ${plan.price}
+                <p className="text-2xl font-extrabold">
+                  {moneyIn(plan.price_ugx, "UGX")}
                   <span className="text-sm font-normal text-muted-foreground">/month</span>
                 </p>
                 <p className="text-xs text-muted-foreground">{plan.blurb}</p>
@@ -188,14 +247,16 @@ function Billing() {
                 </ul>
                 <Button
                   variant={active ? "outline" : "default"}
-                  disabled={active}
+                  disabled={!isOwner}
                   onClick={() => pay(plan.id)}
                 >
-                  {active
-                    ? "Current plan"
-                    : status.subscribed
-                      ? `Switch to ${plan.name}`
-                      : `Pay $${plan.price} — activate ${plan.name}`}
+                  {!isOwner
+                    ? "Only the owner can pay"
+                    : active
+                      ? "Renew / add months"
+                      : status.subscribed
+                        ? `Switch to ${plan.name}`
+                        : `Pay for ${plan.name}`}
                 </Button>
               </CardContent>
             </Card>
@@ -244,15 +305,74 @@ function Billing() {
         </CardContent>
       </Card>
 
+      {payments.length > 0 && (
+        <Card className="shadow-[var(--shadow-card)]">
+          <CardHeader>
+            <CardTitle className="text-base">Payment history</CardTitle>
+          </CardHeader>
+          <CardContent className="overflow-x-auto">
+            <table className="w-full min-w-[520px] text-sm">
+              <thead>
+                <tr className="border-b text-left text-xs uppercase text-muted-foreground">
+                  <th className="py-2 font-semibold">Date</th>
+                  <th className="py-2 font-semibold">Plan</th>
+                  <th className="py-2 font-semibold">Amount</th>
+                  <th className="py-2 font-semibold">Transaction ID</th>
+                  <th className="py-2 font-semibold">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {payments.map((p) => (
+                  <tr key={p.id} className="border-b last:border-0">
+                    <td className="py-2">{shortDate(p.created_at)}</td>
+                    <td className="py-2">
+                      {planById(p.plan as PlanId).name} · {p.months} mo
+                    </td>
+                    <td className="py-2">{moneyIn(Number(p.amount), p.currency)}</td>
+                    <td className="py-2 font-mono text-xs">{p.transaction_id}</td>
+                    <td className="py-2">
+                      <Badge
+                        className={cn(
+                          "border-0",
+                          p.status === "approved" && "bg-success text-success-foreground",
+                          p.status === "pending" && "bg-warning text-warning-foreground",
+                          p.status === "rejected" && "bg-destructive text-destructive-foreground",
+                        )}
+                        title={p.note || undefined}
+                      >
+                        {p.status === "approved"
+                          ? "Paid"
+                          : p.status === "pending"
+                            ? "Confirming"
+                            : "Not received"}
+                      </Badge>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </CardContent>
+        </Card>
+      )}
+
       <Card className="shadow-[var(--shadow-card)]">
         <CardContent className="flex items-start gap-3 pt-6 text-sm text-muted-foreground">
-          <Sparkles className="mt-0.5 size-4 text-brand" />
+          <Smartphone className="mt-0.5 size-4 text-brand" />
           <p>
-            Plan changes apply instantly in this prototype. Connect your payment provider when you
-            wire up your own backend to charge for upgrades automatically.
+            Pay with MTN Mobile Money: send the amount to the number shown, then enter the
+            transaction ID from the SMS. Your plan activates once the payment is confirmed, and
+            paying again adds the months on top of the time you have left.
           </p>
         </CardContent>
       </Card>
+
+      <MomoPaymentDialog
+        plan={paying}
+        info={billingInfo}
+        defaultPhone={business.phone}
+        onOpenChange={(open) => !open && setPaying(null)}
+        onSubmitted={() => queryClient.invalidateQueries({ queryKey: ["subscription-payments"] })}
+      />
     </div>
   );
 }

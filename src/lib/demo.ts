@@ -79,6 +79,8 @@ export const PLANS: {
   id: PlanId;
   name: string;
   price: number;
+  /** What the shop actually pays by mobile money. Mirrors PLAN_PRICES_UGX in Django. */
+  price_ugx: number;
   seats: number;
   blurb: string;
   features: string[];
@@ -88,6 +90,7 @@ export const PLANS: {
     id: "starter",
     name: "Starter",
     price: 19,
+    price_ugx: 70_000,
     seats: 2,
     blurb: "One counter, one owner. Everything you need to start selling.",
     features: ["POS & receipts", "Inventory master grid", "Expense tracking", "2 user seats"],
@@ -97,6 +100,7 @@ export const PLANS: {
     id: "growth",
     name: "Growth",
     price: 49,
+    price_ugx: 180_000,
     seats: 8,
     blurb: "Busy shops with a team, credit customers and bottle deposits.",
     features: [
@@ -124,6 +128,7 @@ export const PLANS: {
     id: "enterprise",
     name: "Enterprise",
     price: 99,
+    price_ugx: 365_000,
     seats: 999,
     blurb: "Wholesalers running multiple counters with full financial control.",
     features: [
