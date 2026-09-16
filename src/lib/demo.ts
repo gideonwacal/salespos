@@ -90,7 +90,7 @@ export const PLANS: {
     id: "starter",
     name: "Starter",
     price: 19,
-    price_ugx: 70_000,
+    price_ugx: 50_000,
     seats: 2,
     blurb: "One counter, one owner. Everything you need to start selling.",
     features: ["POS & receipts", "Inventory master grid", "Expense tracking", "2 user seats"],
@@ -100,7 +100,7 @@ export const PLANS: {
     id: "growth",
     name: "Growth",
     price: 49,
-    price_ugx: 180_000,
+    price_ugx: 100_000,
     seats: 8,
     blurb: "Busy shops with a team, credit customers and bottle deposits.",
     features: [
@@ -128,7 +128,7 @@ export const PLANS: {
     id: "enterprise",
     name: "Enterprise",
     price: 99,
-    price_ugx: 365_000,
+    price_ugx: 150_000,
     seats: 999,
     blurb: "Wholesalers running multiple counters with full financial control.",
     features: [

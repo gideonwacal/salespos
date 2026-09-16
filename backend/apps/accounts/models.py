@@ -145,7 +145,7 @@ class Membership(models.Model):
 
 # Monthly price in shillings. Mirrors `price_ugx` on PLANS in src/lib/demo.ts;
 # the server prices a payment itself so the browser can't name its own amount.
-PLAN_PRICES_UGX = {"starter": 70_000, "growth": 180_000, "enterprise": 365_000}
+PLAN_PRICES_UGX = {"starter": 50_000, "growth": 100_000, "enterprise": 150_000}
 MONTHS_CHOICES = [(1, "1 month"), (3, "3 months"), (6, "6 months"), (12, "12 months")]
 
 

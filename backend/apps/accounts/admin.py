@@ -50,7 +50,25 @@ class SubscriptionPaymentAdmin(admin.ModelAdmin):
     readonly_fields = ["workspace", "submitted_by", "amount", "status", "reviewed_at", "created_at"]
     actions = ["approve_payments", "reject_payments"]
 
-    @admin.action(description="Approve: money received, activate the plan")
+    # Approving a payment is what hands out a paid plan, so only a superuser
+    # sees these records, and nobody can create or delete one here: a payment
+    # always comes from the shop, and the trail of them is kept.
+    def has_module_permission(self, request):
+        return request.user.is_active and request.user.is_superuser
+
+    def has_view_permission(self, request, obj=None):
+        return request.user.is_active and request.user.is_superuser
+
+    def has_change_permission(self, request, obj=None):
+        return request.user.is_active and request.user.is_superuser
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+    @admin.action(description="Approve: money received, activate the plan", permissions=["change"])
     def approve_payments(self, request, queryset):
         count = 0
         for payment in queryset.filter(status="pending"):
@@ -58,7 +76,7 @@ class SubscriptionPaymentAdmin(admin.ModelAdmin):
             count += 1
         self.message_user(request, f"Approved {count} payment(s).", messages.SUCCESS)
 
-    @admin.action(description="Reject: money not received")
+    @admin.action(description="Reject: money not received", permissions=["change"])
     def reject_payments(self, request, queryset):
         count = 0
         for payment in queryset.filter(status="pending"):

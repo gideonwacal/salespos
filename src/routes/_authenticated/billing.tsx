@@ -80,10 +80,14 @@ function Billing() {
   const live = isServerTable("business");
   const [paying, setPaying] = useState<PlanId | null>(null);
 
+  // The payment number is only fetched while the owner has the pay dialog open,
+  // and dropped from the query cache as soon as it closes.
   const { data: billingInfo } = useQuery({
     queryKey: ["billing-info"],
     queryFn: fetchBillingInfo,
-    enabled: live,
+    enabled: live && isOwner && paying !== null,
+    staleTime: 0,
+    gcTime: 0,
   });
   const { data: payments = [] } = useQuery({
     queryKey: ["subscription-payments"],

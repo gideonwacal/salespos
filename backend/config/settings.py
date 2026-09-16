@@ -193,6 +193,29 @@ CORS_ALLOW_HEADERS = (
 
 # Where shops send their monthly subscription. Shown on the billing page; each
 # payment is confirmed by hand in the Django admin before the plan activates.
+#
+# The number is read only from the environment (backend/.env locally, a secret
+# env var on the host) so it never lands in git or in the browser bundle. A
+# value that isn't a real MTN Uganda line is dropped rather than shown to
+# paying shops, so a typo can't send their money to a stranger.
 SUBSCRIPTION_MOMO_NETWORK = "MTN Mobile Money"
-SUBSCRIPTION_MOMO_NUMBER = os.environ.get("SUBSCRIPTION_MOMO_NUMBER", "")
-SUBSCRIPTION_MOMO_NAME = os.environ.get("SUBSCRIPTION_MOMO_NAME", "")
+
+
+def mtn_uganda_number(raw: str) -> str:
+    digits = "".join(ch for ch in raw if ch.isdigit())
+    if digits.startswith("256"):
+        digits = "0" + digits[3:]
+    if len(digits) == 10 and digits[:3] in {"076", "077", "078", "079", "039"}:
+        return f"{digits[:4]} {digits[4:7]} {digits[7:]}"
+    return ""
+
+
+SUBSCRIPTION_MOMO_NUMBER = mtn_uganda_number(os.environ.get("SUBSCRIPTION_MOMO_NUMBER", ""))
+SUBSCRIPTION_MOMO_NAME = os.environ.get("SUBSCRIPTION_MOMO_NAME", "").strip()
+
+# Rate limits on the billing endpoints: enough for a real shop, too few to
+# scrape the payment number or flood the admin with made-up transaction IDs.
+REST_FRAMEWORK["DEFAULT_THROTTLE_RATES"] = {
+    "billing_info": "20/hour",
+    "payment_submit": "10/day",
+}

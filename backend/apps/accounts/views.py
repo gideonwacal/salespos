@@ -1,9 +1,11 @@
 from django.conf import settings
 from django.db import transaction
+from django.utils.cache import add_never_cache_headers
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework_simplejwt.views import TokenObtainPairView
@@ -186,12 +188,22 @@ class MembershipViewSet(viewsets.ModelViewSet):
 
 
 class BillingInfoView(APIView):
-    """GET /api/billing/ — where to send the subscription, and what it costs."""
+    """GET /api/billing/ — where to send the subscription, and what it costs.
+
+    The payment number is handed out only to a signed-in workspace owner, the
+    one person who can pay, and is rate-limited and marked never-cache so it
+    doesn't linger in shared caches or get harvested by looping over accounts.
+    """
 
     permission_classes = [IsAuthenticated]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "billing_info"
 
     def get(self, request):
-        return Response(
+        _, role = resolve_workspace(request)
+        if role != "owner":
+            self.permission_denied(request, message="Only the workspace owner can pay.")
+        response = Response(
             {
                 "network": settings.SUBSCRIPTION_MOMO_NETWORK,
                 "number": settings.SUBSCRIPTION_MOMO_NUMBER,
@@ -200,6 +212,8 @@ class BillingInfoView(APIView):
                 "prices": PLAN_PRICES_UGX,
             }
         )
+        add_never_cache_headers(response)
+        return response
 
 
 class SubscriptionPaymentViewSet(viewsets.ModelViewSet):
@@ -214,6 +228,12 @@ class SubscriptionPaymentViewSet(viewsets.ModelViewSet):
         request.workspace = workspace
         request.workspace_role = role
         super().initial(request, *args, **kwargs)
+
+    def get_throttles(self):
+        if self.action == "create":
+            self.throttle_scope = "payment_submit"
+            return [ScopedRateThrottle()]
+        return super().get_throttles()
 
     def get_queryset(self):
         return SubscriptionPayment.objects.filter(workspace=self.request.workspace)

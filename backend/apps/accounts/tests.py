@@ -243,3 +243,30 @@ class SubscriptionPaymentTests(APITestCase):
         self.workspace.refresh_from_db()
         self.assertFalse(self.workspace.subscribed)
         self.assertEqual(self.workspace.plan, "starter")
+
+    def test_only_the_owner_is_shown_the_payment_number(self):
+        self.client.force_authenticate(user=self.manager)
+        response = self.client.get("/api/billing/")
+        self.assertEqual(response.status_code, 403)
+        self.assertNotIn("0770000000", response.content.decode())
+
+        self.client.force_authenticate(user=self.owner)
+        response = self.client.get("/api/billing/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["number"], "0770000000")
+        self.assertIn("no-store", response["Cache-Control"])
+
+    def test_anonymous_visitors_get_nothing(self):
+        response = self.client.get("/api/billing/")
+        self.assertEqual(response.status_code, 401)
+
+
+class MomoNumberSettingTests(APITestCase):
+    def test_only_real_mtn_uganda_numbers_are_accepted(self):
+        from config.settings import mtn_uganda_number
+
+        self.assertEqual(mtn_uganda_number("0771234567"), "0771 234 567")
+        self.assertEqual(mtn_uganda_number("+256 771 234 567"), "0771 234 567")
+        self.assertEqual(mtn_uganda_number("0701234567"), "")  # Airtel prefix
+        self.assertEqual(mtn_uganda_number("077123456"), "")
+        self.assertEqual(mtn_uganda_number(""), "")

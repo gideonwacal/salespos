@@ -34,6 +34,12 @@ services:
       # Your Vercel URL, e.g. https://salespos.vercel.app
       - key: CORS_ALLOWED_ORIGINS
         sync: false
+      # The MTN MoMo number shops pay subscriptions to, and the name MTN shows
+      # for it. Secret: set in the dashboard only, never committed here.
+      - key: SUBSCRIPTION_MOMO_NUMBER
+        sync: false
+      - key: SUBSCRIPTION_MOMO_NAME
+        sync: false
       - key: JWT_ACCESS_MINUTES
         value: "60"
       - key: JWT_REFRESH_DAYS
