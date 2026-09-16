@@ -48,6 +48,7 @@ export function businessFrom(workspace: api.ApiWorkspace): Partial<Business> {
     low_stock_alerts: pick("low_stock_alerts", true),
     expiry_alerts: pick("expiry_alerts", true),
     plan: pick("plan", "starter") as Business["plan"],
+    access: pick("access", "standard") as Business["access"],
     trial_ends: pick("trial_ends", ""),
     subscribed: pick("subscribed", false),
     paid_until: pick("paid_until", null),

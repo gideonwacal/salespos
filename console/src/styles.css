@@ -1,0 +1,54 @@
+@import "tailwindcss";
+
+/*
+ * Control Room — the console's own look. Deliberately nothing like the shop
+ * app: a dark instrument panel with a single signal colour, so it is never
+ * mistaken for a shop screen.
+ */
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "Cascadia Code", Consolas, monospace;
+
+  --color-ink: #0a0f1c;
+  --color-panel: #111827;
+  --color-panel-2: #172033;
+  --color-line: #243049;
+  --color-text: #e6ebf5;
+  --color-dim: #8b97b0;
+  --color-signal: #c6f36b;
+  --color-signal-ink: #16210a;
+  --color-ok: #4ade80;
+  --color-warn: #fbbf24;
+  --color-bad: #f87171;
+  --color-info: #7dd3fc;
+}
+
+html,
+body {
+  background: var(--color-ink);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  background-image:
+    radial-gradient(circle at 15% -10%, rgb(198 243 107 / 0.07), transparent 40%),
+    linear-gradient(rgb(36 48 73 / 0.25) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(36 48 73 / 0.25) 1px, transparent 1px);
+  background-size:
+    auto,
+    32px 32px,
+    32px 32px;
+  background-attachment: fixed;
+  min-height: 100vh;
+}
+
+::selection {
+  background: var(--color-signal);
+  color: var(--color-signal-ink);
+}
+
+input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: invert(0.8);
+}

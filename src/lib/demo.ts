@@ -44,6 +44,8 @@ export type Business = {
   low_stock_alerts: boolean;
   expiry_alerts: boolean;
   plan: PlanId;
+  /** Set by the platform owner: waive payment, or lock the business out. */
+  access?: "standard" | "free" | "suspended";
   trial_ends: string;
   subscribed: boolean;
   paid_until: string | null;
@@ -262,6 +264,7 @@ export function blankBusiness(overrides: Partial<Business> = {}): Business {
     low_stock_alerts: true,
     expiry_alerts: true,
     plan: "starter",
+    access: "standard",
     trial_ends: day(14),
     subscribed: false,
     paid_until: null,
@@ -937,6 +940,10 @@ export function saveBusiness(patch: Partial<Business>) {
 export type TrialStatus = {
   onTrial: boolean;
   subscribed: boolean;
+  /** The platform owner waived payment for this business. */
+  free: boolean;
+  /** The platform owner locked this business out. */
+  suspended: boolean;
   daysLeft: number;
   expired: boolean;
   /** true when the workspace must pay before using paid modules */
@@ -949,12 +956,16 @@ export function trialStatus(business: Business): TrialStatus {
   const end = new Date(business.trial_ends).getTime();
   const daysLeft = Math.max(0, Math.ceil((end - Date.now()) / 86400000));
   const expired = daysLeft <= 0;
+  const free = business.access === "free";
+  const suspended = business.access === "suspended";
   return {
-    onTrial: !subscribed && !expired,
+    onTrial: !subscribed && !free && !suspended && !expired,
     subscribed,
+    free,
+    suspended,
     daysLeft,
     expired,
-    locked: !subscribed && expired,
+    locked: suspended || (!subscribed && !free && expired),
   };
 }
 

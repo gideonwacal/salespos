@@ -33,15 +33,25 @@ class WorkspaceSerializer(serializers.ModelSerializer):
             "low_stock_alerts",
             "expiry_alerts",
             "plan",
+            "access",
             "trial_ends",
             "subscribed",
             "paid_until",
             "configured",
             "created_at",
         ]
-        # What a shop has paid for only ever changes through an approved
-        # SubscriptionPayment, never by the shop editing its own profile.
-        read_only_fields = ["id", "created_at", "plan", "trial_ends", "subscribed", "paid_until"]
+        # What a shop has paid for, and whether it may trade at all, only ever
+        # changes through an approved payment or the platform console — never
+        # by the shop editing its own profile.
+        read_only_fields = [
+            "id",
+            "created_at",
+            "plan",
+            "access",
+            "trial_ends",
+            "subscribed",
+            "paid_until",
+        ]
 
 
 class SubscriptionPaymentSerializer(serializers.ModelSerializer):
@@ -96,8 +106,8 @@ class SubscriptionPaymentSerializer(serializers.ModelSerializer):
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = ["id", "email", "full_name", "phone", "is_active", "created_at"]
-        read_only_fields = ["id", "created_at"]
+        fields = ["id", "email", "full_name", "phone", "is_active", "is_superuser", "created_at"]
+        read_only_fields = ["id", "created_at", "is_superuser"]
 
 
 class MembershipSerializer(serializers.ModelSerializer):

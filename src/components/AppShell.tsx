@@ -152,7 +152,9 @@ export function AppShell({ children }: { children: ReactNode }) {
 
         <div className="space-y-1 border-t border-sidebar-border p-4 text-[11px] leading-relaxed text-sidebar-foreground/60">
           <p className="font-semibold text-sidebar-foreground/80">
-            {trialStatus(business).onTrial ? "Free trial" : `${planById(business.plan).name} plan`} · powered by {APP.name}
+            {trialStatus(business).onTrial
+              ? "Free trial"
+              : `${planById(business.plan).name} plan`} · powered by {APP.name}
           </p>
           {(business.address || location) && (
             <p>

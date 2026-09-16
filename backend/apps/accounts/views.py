@@ -10,7 +10,13 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework_simplejwt.views import TokenObtainPairView
 
-from apps.accounts.models import PLAN_PRICES_UGX, Membership, SubscriptionPayment, Workspace
+from apps.accounts.models import (
+    PLAN_PRICES_UGX,
+    Membership,
+    SubscriptionPayment,
+    User,
+    Workspace,
+)
 from apps.accounts.serializers import (
     InviteMemberSerializer,
     MembershipSerializer,
@@ -19,9 +25,10 @@ from apps.accounts.serializers import (
     SubscriptionPaymentSerializer,
     WorkspaceSerializer,
 )
+from apps.console.models import ActivityLog
 from apps.core.permissions import IsOwnerOrReadOnly, IsWorkspaceMember
 from apps.core.services import erase_workspace_data
-from apps.core.tenancy import resolve_workspace
+from apps.core.tenancy import ensure_workspace_open, resolve_workspace
 
 
 def issue_tokens(user):
@@ -59,6 +66,18 @@ class LoginView(TokenObtainPairView):
     """POST /api/auth/login/ — email + password for an access/refresh pair."""
 
     permission_classes = [AllowAny]
+    # Password guessing, against a shop or the platform owner's console.
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "login"
+
+    def post(self, request, *args, **kwargs):
+        response = super().post(request, *args, **kwargs)
+        if response.status_code == 200:
+            email = str(request.data.get("email", "")).strip().lower()
+            user = User.objects.filter(email=email).first()
+            if user is not None:
+                ActivityLog.record(request, "signed in", user=user)
+        return response
 
 
 class MeView(APIView):
@@ -108,6 +127,7 @@ class WorkspaceViewSet(viewsets.ModelViewSet):
         return membership.role if membership else None
 
     def perform_update(self, serializer):
+        ensure_workspace_open(serializer.instance)
         if self._role_in(serializer.instance) != "owner":
             self.permission_denied(
                 self.request, message="Only the owner can edit business settings."
@@ -129,6 +149,7 @@ class WorkspaceViewSet(viewsets.ModelViewSet):
         so do its people. Only the records the shop has entered go.
         """
         workspace = self.get_object()
+        ensure_workspace_open(workspace)
         if self._role_in(workspace) != "owner":
             self.permission_denied(
                 self.request, message="Only the owner can erase the workspace data."
@@ -148,6 +169,7 @@ class MembershipViewSet(viewsets.ModelViewSet):
         request.workspace = workspace
         request.workspace_role = role
         super().initial(request, *args, **kwargs)
+        ensure_workspace_open(workspace)
 
     def get_queryset(self):
         return (
@@ -228,6 +250,7 @@ class SubscriptionPaymentViewSet(viewsets.ModelViewSet):
         request.workspace = workspace
         request.workspace_role = role
         super().initial(request, *args, **kwargs)
+        ensure_workspace_open(workspace)
 
     def get_throttles(self):
         if self.action == "create":

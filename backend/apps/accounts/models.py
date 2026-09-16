@@ -99,7 +99,18 @@ class Workspace(models.Model):
     low_stock_alerts = models.BooleanField(default=True)
     expiry_alerts = models.BooleanField(default=True)
 
+    # Set only by the platform owner from the console. "standard" is the normal
+    # trial-then-pay path; "free" waives payment; "suspended" locks the business
+    # out entirely, on the server as well as in the app.
+    ACCESS_CHOICES = [
+        ("standard", "Standard (trial, then pay)"),
+        ("free", "Free (no subscription needed)"),
+        ("suspended", "Suspended"),
+    ]
+
     plan = models.CharField(max_length=20, choices=PLAN_CHOICES, default="starter")
+    access = models.CharField(max_length=20, choices=ACCESS_CHOICES, default="standard")
+    access_note = models.CharField(max_length=255, blank=True, default="")
     trial_ends = models.DateTimeField(default=default_trial_ends)
     subscribed = models.BooleanField(default=False)
     paid_until = models.DateTimeField(null=True, blank=True)

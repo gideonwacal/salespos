@@ -128,15 +128,42 @@ function Billing() {
             ? `${staff.length} seat${staff.length === 1 ? "" : "s"} used (unlimited during trial)`
             : `${staff.length} of ${current.seats === 999 ? "unlimited" : current.seats} seats used`}{" "}
           ·{" "}
-          {status.subscribed
-            ? `subscription active until ${shortDate(business.paid_until ?? "")}`
-            : status.onTrial
-              ? `trial ends ${shortDate(business.trial_ends)} (${status.daysLeft} day${status.daysLeft === 1 ? "" : "s"} left)`
-              : "trial ended"}
+          {status.suspended
+            ? "account suspended"
+            : status.free
+              ? "free access, no subscription needed"
+              : status.subscribed
+                ? `subscription active until ${shortDate(business.paid_until ?? "")}`
+                : status.onTrial
+                  ? `trial ends ${shortDate(business.trial_ends)} (${status.daysLeft} day${status.daysLeft === 1 ? "" : "s"} left)`
+                  : "trial ended"}
         </p>
       </div>
 
-      {!status.subscribed && (
+      {status.suspended && (
+        <Card className="border-destructive shadow-[var(--shadow-card)]">
+          <CardContent className="flex flex-wrap items-center justify-between gap-3 pt-6 text-sm">
+            <p className="font-medium">
+              This business has been suspended. Contact SalesPos support to restore access.
+            </p>
+            <Badge className="border-0 bg-destructive text-destructive-foreground">Suspended</Badge>
+          </CardContent>
+        </Card>
+      )}
+
+      {status.free && (
+        <Card className="border-success/50 shadow-[var(--shadow-card)]">
+          <CardContent className="flex flex-wrap items-center justify-between gap-3 pt-6 text-sm">
+            <p className="font-medium">
+              Your business has free access to the {current.name} plan. No subscription payment is
+              needed.
+            </p>
+            <Badge className="border-0 bg-success text-success-foreground">Free access</Badge>
+          </CardContent>
+        </Card>
+      )}
+
+      {!status.subscribed && !status.free && !status.suspended && (
         <Card
           className={cn(
             "shadow-[var(--shadow-card)]",
@@ -206,7 +233,7 @@ function Billing() {
             ))}
           </ul>
           {advice.isUpgrade && (
-            <Button size="sm" disabled={!isOwner} onClick={() => pay(advice.recommended)}>
+            <Button size="sm" disabled={!isOwner || status.suspended || status.free} onClick={() => pay(advice.recommended)}>
               Move to {advised.name} &mdash; {moneyIn(advised.price_ugx, "UGX")}/month
             </Button>
           )}
@@ -251,7 +278,7 @@ function Billing() {
                 </ul>
                 <Button
                   variant={active ? "outline" : "default"}
-                  disabled={!isOwner}
+                  disabled={!isOwner || status.suspended || status.free}
                   onClick={() => pay(plan.id)}
                 >
                   {!isOwner

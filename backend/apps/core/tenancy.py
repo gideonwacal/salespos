@@ -45,6 +45,14 @@ def resolve_workspace(request):
     return membership.workspace, membership.role
 
 
+def ensure_workspace_open(workspace):
+    """Refuse every request into a business the platform owner has suspended."""
+    if workspace is not None and workspace.access == "suspended":
+        raise PermissionDenied(
+            "This business has been suspended. Contact SalesPos support to restore access."
+        )
+
+
 class WorkspaceViewSet(ModelViewSet):
     """Base viewset that scopes every query and every write to one workspace."""
 
@@ -57,6 +65,7 @@ class WorkspaceViewSet(ModelViewSet):
         request.workspace = workspace
         request.workspace_role = role
         super().initial(request, *args, **kwargs)
+        ensure_workspace_open(workspace)
 
     def get_queryset(self):
         return super().get_queryset().filter(workspace=self.request.workspace)

@@ -146,6 +146,35 @@ talking to each other.
 
 ---
 
+## 5. Platform console (your private site)
+
+The console in [`console/`](console/README.md) is a separate site from the shop
+app. Deploy it as a **second** Vercel project from the same repository:
+
+| Field | Value |
+| --- | --- |
+| Framework Preset | **Vite** |
+| Root Directory | `console` |
+| Build Command | `npm run build` |
+| Output Directory | `dist` |
+| Env var `VITE_API_URL` | `https://salespos-api.onrender.com/api` |
+
+Then add its URL to the API's CORS list, after the shop's:
+
+```
+CORS_ALLOWED_ORIGINS = https://salespos.vercel.app,https://your-console.vercel.app
+```
+
+Create your platform owner account once, from Render → your service → **Shell**:
+
+```
+python manage.py createsuperuser
+```
+
+Don't link to the console from anywhere public. Only superusers can use it.
+
+---
+
 ## When something is wrong
 
 | What you see | Cause |

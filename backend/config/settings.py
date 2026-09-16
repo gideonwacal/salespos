@@ -46,6 +46,7 @@ INSTALLED_APPS = [
     "apps.sales",
     "apps.expenses",
     "apps.trade",
+    "apps.console",
 ]
 
 MIDDLEWARE = [
@@ -60,6 +61,8 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    # Last, so it sees the final response and the user DRF authenticated.
+    "apps.console.middleware.ActivityLogMiddleware",
 ]
 
 ROOT_URLCONF = "config.urls"
@@ -153,11 +156,11 @@ SIMPLE_JWT = {
     "USER_ID_CLAIM": "user_id",
 }
 
-# 8080 is what `npm run dev` actually serves on in this project; 3000/5173 are
+# 8080 is the shop app (`npm run dev`), 8090 the platform console; 3000/5173 are
 # Vite's other common ports.
 CORS_ALLOWED_ORIGINS = env_list(
     "CORS_ALLOWED_ORIGINS",
-    "http://localhost:8080,http://localhost:3000,http://localhost:5173",
+    "http://localhost:8080,http://localhost:8090,http://localhost:3000,http://localhost:5173",
 )
 # The browser posts to a different origin in production, so the CSRF check
 # needs to know which fronts are trusted. Same list as CORS, https only.
@@ -216,6 +219,7 @@ SUBSCRIPTION_MOMO_NAME = os.environ.get("SUBSCRIPTION_MOMO_NAME", "").strip()
 # Rate limits on the billing endpoints: enough for a real shop, too few to
 # scrape the payment number or flood the admin with made-up transaction IDs.
 REST_FRAMEWORK["DEFAULT_THROTTLE_RATES"] = {
+    "login": "10/minute",
     "billing_info": "20/hour",
     "payment_submit": "10/day",
 }
