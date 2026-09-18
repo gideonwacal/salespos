@@ -454,6 +454,16 @@ function products(industry: IndustryProfile): TransferSchema {
       example: "yes",
     });
   }
+  if (hasFeature(industry, "service_item")) {
+    columns.push({
+      key: "is_service",
+      label: "Service",
+      kind: "boolean",
+      fallback: false,
+      aliases: ["service", "not stocked", "non stock", "is service"],
+      example: "no",
+    });
+  }
 
   return {
     id: "products",

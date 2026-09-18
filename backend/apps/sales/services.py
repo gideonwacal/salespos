@@ -78,7 +78,9 @@ def create_sale(
         quantity = int(item["quantity"])
         if quantity <= 0:
             raise ValidationError({"items": "Quantity must be greater than zero."})
-        if quantity > product.stock_quantity:
+        # A service has no shelf to run down: a consultation or a delivery trip
+        # is sold as often as it is asked for.
+        if not product.is_service and quantity > product.stock_quantity:
             raise ValidationError(
                 {"items": f"Only {product.stock_quantity} of {product.name} left in stock."}
             )
@@ -103,18 +105,21 @@ def create_sale(
             subtotal=subtotal,
         )
 
-        product.stock_quantity = max(0, product.stock_quantity - quantity)
-        product.save(update_fields=["stock_quantity"])
+        if not product.is_service:
+            product.stock_quantity = max(0, product.stock_quantity - quantity)
+            product.save(update_fields=["stock_quantity"])
 
-        # Audit trail, exactly as the old apply_sale_item trigger did.
-        StockTransaction.objects.create(
-            workspace=workspace,
-            product=product,
-            type="sale",
-            quantity=quantity,
-            notes="POS sale",
-            performed_by=cashier,
-        )
+            # Audit trail, exactly as the old apply_sale_item trigger did.
+            # Services stay out of it: a movement ledger that counts
+            # consultations stops describing the shelf.
+            StockTransaction.objects.create(
+                workspace=workspace,
+                product=product,
+                type="sale",
+                quantity=quantity,
+                notes="POS sale",
+                performed_by=cashier,
+            )
 
         total_amount += subtotal
         total_cost += (unit_cost * quantity).quantize(Decimal("0.01"))
@@ -179,7 +184,7 @@ def amend_sale(
     for product_id, wanted in new_quantities.items():
         extra = wanted - old_quantities.get(product_id, 0)
         product = products[product_id]
-        if extra > 0 and extra > product.stock_quantity:
+        if not product.is_service and extra > 0 and extra > product.stock_quantity:
             raise ValidationError(
                 {
                     "items": (
@@ -230,7 +235,7 @@ def amend_sale(
         before = old_quantities.get(product_id, 0)
         after = new_quantities.get(product_id, 0)
         delta = after - before
-        if delta == 0:
+        if delta == 0 or product.is_service:
             continue
 
         product.stock_quantity = max(0, product.stock_quantity - delta)
@@ -275,6 +280,9 @@ def void_sale(sale: Sale) -> None:
     """
     for item in sale.items.select_related("product"):
         product = Product.objects.select_for_update().get(pk=item.product_id)
+        # Nothing came off the shelf for a service, so nothing goes back on it.
+        if product.is_service:
+            continue
         product.stock_quantity += item.quantity
         product.save(update_fields=["stock_quantity"])
         StockTransaction.objects.create(

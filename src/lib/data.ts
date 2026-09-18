@@ -19,6 +19,8 @@ export type Product = {
   unit_of_measure?: string;
   batch_number?: string;
   prescription_only?: boolean;
+  /** Charged like goods but never stocked: a consultation, a lab test, a delivery. */
+  is_service?: boolean;
   is_glass_bottle: boolean;
   bottles_per_unit: number;
   bulk_min_qty: number;

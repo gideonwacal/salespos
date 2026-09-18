@@ -1033,10 +1033,13 @@ function ShelfDetail({
   }, [movements]);
 
   const rows = useMemo(() => {
+    // A service reads zero stock for ever, so it would head this list and never
+    // leave it. Nothing to reorder means nothing to show.
+    const stocked = products.filter((p) => !p.is_service);
     const matching =
       mode === "out"
-        ? products.filter((p) => Number(p.stock_quantity) <= 0)
-        : products.filter(
+        ? stocked.filter((p) => Number(p.stock_quantity) <= 0)
+        : stocked.filter(
             (p) =>
               Number(p.stock_quantity) > 0 && Number(p.stock_quantity) <= Number(p.reorder_level),
           );

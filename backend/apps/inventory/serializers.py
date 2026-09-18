@@ -28,6 +28,7 @@ class ProductSerializer(serializers.ModelSerializer):
             "unit_of_measure",
             "batch_number",
             "prescription_only",
+            "is_service",
             "is_glass_bottle",
             "bottles_per_unit",
             "bulk_min_qty",

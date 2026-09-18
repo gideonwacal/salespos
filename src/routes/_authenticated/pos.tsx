@@ -199,7 +199,9 @@ function POS() {
   const checkout = async () => {
     if (!cart.length) return toast.error("Cart is empty");
     if (!user) return toast.error("Not signed in");
-    const overs = cart.filter((l) => l.qty > l.product.stock_quantity);
+    // Services have no shelf to run out: a consultation or a delivery trip is
+    // sold as often as it is asked for.
+    const overs = cart.filter((l) => !l.product.is_service && l.qty > l.product.stock_quantity);
     if (overs.length) return toast.error(`Not enough stock for ${overs[0].product.name}`);
     if (isCredit && !customer) return toast.error("Pick a saved customer for a credit sale");
     if (bottleBlock) return toast.error(bottleBlock);
@@ -320,12 +322,12 @@ function POS() {
 
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {filtered.map((p) => {
-            const low = p.stock_quantity <= p.reorder_level;
+            const low = !p.is_service && p.stock_quantity <= p.reorder_level;
             return (
               <button
                 key={p.id}
                 onClick={() => add(p)}
-                disabled={p.stock_quantity <= 0}
+                disabled={!p.is_service && p.stock_quantity <= 0}
                 className="rounded-xl border border-border bg-card p-4 text-left shadow-[var(--shadow-card)] transition-colors hover:border-primary disabled:opacity-50"
               >
                 <p className="text-sm font-semibold leading-tight">{p.name}</p>
@@ -346,7 +348,7 @@ function POS() {
                       low && "border-warning bg-warning-soft text-warning-foreground",
                     )}
                   >
-                    {num(p.stock_quantity)} left
+                    {p.is_service ? "service" : `${num(p.stock_quantity)} left`}
                   </Badge>
                 </div>
               </button>

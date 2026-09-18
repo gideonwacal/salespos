@@ -51,6 +51,11 @@ class Product(WorkspaceScoped):
         related_name="products_added",
     )
 
+    # A consultation, a lab test, a bed-night or a delivery trip: charged like
+    # goods but never on a shelf. Without this the counter refuses to sell one
+    # the moment stock reads zero, which for a service it always does.
+    is_service = models.BooleanField(default=False)
+
     class Meta:
         db_table = "products"
         ordering = ["name"]

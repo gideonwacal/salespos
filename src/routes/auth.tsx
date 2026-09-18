@@ -14,11 +14,13 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { INDUSTRY_PROFILES } from "@/lib/industry";
+import { INDUSTRY_GROUPS, resolveIndustry } from "@/lib/industry";
 import heroImage from "@/assets/market-hero.jpg";
 
 export const Route = createFileRoute("/auth")({
@@ -196,15 +198,20 @@ function AuthPage() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {INDUSTRY_PROFILES.map((p) => (
-                        <SelectItem key={p.id} value={p.id}>
-                          {p.label}
-                        </SelectItem>
+                      {INDUSTRY_GROUPS.map((group) => (
+                        <SelectGroup key={group.family}>
+                          <SelectLabel>{group.label}</SelectLabel>
+                          {group.profiles.map((p) => (
+                            <SelectItem key={p.id} value={p.id}>
+                              {p.label}
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
                       ))}
                     </SelectContent>
                   </Select>
                   <p className="text-xs text-muted-foreground">
-                    {INDUSTRY_PROFILES.find((p) => p.id === signUp.industry)?.blurb}
+                    {resolveIndustry(signUp.industry).blurb}
                   </p>
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2">

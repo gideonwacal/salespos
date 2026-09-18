@@ -92,9 +92,13 @@ def record_damage(
 
 
 def low_stock_products(workspace):
-    """Products at or below their reorder level."""
+    """Products at or below their reorder level.
+
+    Services are excluded: a consultation sits at zero stock for ever, and a
+    reorder list that opens with "buy more consultations" is one nobody reads.
+    """
     return Product.objects.filter(
-        workspace=workspace, stock_quantity__lte=F("reorder_level")
+        workspace=workspace, is_service=False, stock_quantity__lte=F("reorder_level")
     )
 
 

@@ -11,6 +11,7 @@ from apps.accounts.models import Membership, User, Workspace
 from apps.inventory.models import Product, StockTransaction
 from apps.inventory.services import (
     clear_store,
+    low_stock_products,
     record_damage,
     record_stock_transaction,
     signed_delta,
@@ -273,3 +274,29 @@ class ClearStoreTests(TestCase):
         delete = self.client.delete(f"/api/products/{self.rice.id}/", **self.headers)
         self.assertEqual(delete.status_code, 403)
         self.assertTrue(Product.objects.filter(pk=self.rice.pk).exists())
+
+
+class ServiceItemInventoryTests(TestCase):
+    """Services must stay off the reorder list, however long their stock reads zero."""
+
+    def setUp(self):
+        self.workspace = Workspace.objects.create(name="Bright Clinic")
+        self.consultation = Product.objects.create(
+            workspace=self.workspace,
+            name="General consultation",
+            unit_selling_price=Decimal("20000"),
+            stock_quantity=0,
+            reorder_level=0,
+            is_service=True,
+        )
+        self.gloves = Product.objects.create(
+            workspace=self.workspace,
+            name="Examination gloves",
+            unit_selling_price=Decimal("500"),
+            stock_quantity=1,
+            reorder_level=10,
+        )
+
+    def test_a_service_is_never_low_stock(self):
+        names = [p.name for p in low_stock_products(self.workspace)]
+        self.assertEqual(names, ["Examination gloves"])

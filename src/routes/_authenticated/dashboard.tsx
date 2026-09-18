@@ -133,8 +133,12 @@ function Dashboard() {
     const retailValue = sum(
       products.map((p) => Number(p.unit_selling_price) * Number(p.stock_quantity)),
     );
-    const outOfStock = products.filter((p) => Number(p.stock_quantity) <= 0);
-    const lowStock = products.filter(
+    // Services never sit on a shelf, so they are neither out of stock nor low.
+    // Counting them would put "buy more consultations" at the top of the reorder
+    // list and make the whole alert worth ignoring.
+    const stocked = products.filter((p) => !p.is_service);
+    const outOfStock = stocked.filter((p) => Number(p.stock_quantity) <= 0);
+    const lowStock = stocked.filter(
       (p) => Number(p.stock_quantity) > 0 && Number(p.stock_quantity) <= Number(p.reorder_level),
     );
     const expiring = products

@@ -11,11 +11,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { LogoPicker } from "@/components/LogoPicker";
-import { INDUSTRY_PROFILES, resolveIndustry } from "@/lib/industry";
+import { INDUSTRY_GROUPS, resolveIndustry } from "@/lib/industry";
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
@@ -111,10 +113,17 @@ function Setup() {
                 <SelectValue placeholder="Select" />
               </SelectTrigger>
               <SelectContent>
-                {INDUSTRY_PROFILES.map((p) => (
-                  <SelectItem key={p.id} value={p.id}>
-                    {p.label}
-                  </SelectItem>
+                {/* Eleven trades read as a wall; grouped, the health family is
+                    one choice followed by which kind. */}
+                {INDUSTRY_GROUPS.map((group) => (
+                  <SelectGroup key={group.family}>
+                    <SelectLabel>{group.label}</SelectLabel>
+                    {group.profiles.map((p) => (
+                      <SelectItem key={p.id} value={p.id}>
+                        {p.label}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
                 ))}
               </SelectContent>
             </Select>

@@ -1260,7 +1260,9 @@ export function eraseWorkspaceData(): number {
 function applySideEffects(tables: Tables, table: string, rows: Record<string, unknown>[]) {
   const bump = (productId: string, delta: number) => {
     tables.products = (tables.products ?? []).map((p) =>
-      p.id === productId
+      // A service was never on the shelf, so selling one moves nothing.
+      // The server rule, kept here so the demo behaves like the real thing.
+      p.id === productId && !p.is_service
         ? { ...p, stock_quantity: Math.max(0, Number(p.stock_quantity) + delta) }
         : p,
     );

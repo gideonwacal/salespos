@@ -130,3 +130,73 @@ class SaleServiceTests(TestCase):
             StockTransaction.objects.filter(type="adjustment").exists(),
             "voiding should leave an audit trail",
         )
+
+
+class ServiceItemTests(TestCase):
+    """A consultation, a lab test or a delivery trip: charged, never stocked."""
+
+    def setUp(self):
+        self.workspace = Workspace.objects.create(name="Bright Clinic")
+        self.user = User.objects.create_user(
+            email="clinician@example.com", password="sup3rsecret!", full_name="Clinician"
+        )
+        Membership.objects.create(user=self.user, workspace=self.workspace, role="owner")
+        self.consultation = Product.objects.create(
+            workspace=self.workspace,
+            name="General consultation",
+            category="Consultation & Services",
+            unit_buying_price=Decimal("0"),
+            unit_selling_price=Decimal("20000"),
+            stock_quantity=0,
+            is_service=True,
+        )
+
+    def test_a_service_sells_with_no_stock_on_hand(self):
+        """The whole point: stock reads zero for ever and must not block a sale."""
+        sale = create_sale(
+            workspace=self.workspace,
+            cashier=self.user,
+            items=[{"product_id": self.consultation.id, "quantity": 3}],
+        )
+        self.assertEqual(sale.total_amount, Decimal("60000.00"))
+
+        self.consultation.refresh_from_db()
+        self.assertEqual(self.consultation.stock_quantity, 0)
+
+    def test_a_service_leaves_the_stock_ledger_alone(self):
+        create_sale(
+            workspace=self.workspace,
+            cashier=self.user,
+            items=[{"product_id": self.consultation.id, "quantity": 1}],
+        )
+        # A movement ledger that counts consultations stops describing the shelf.
+        self.assertFalse(
+            StockTransaction.objects.filter(product=self.consultation).exists()
+        )
+
+    def test_voiding_a_service_sale_does_not_invent_stock(self):
+        sale = create_sale(
+            workspace=self.workspace,
+            cashier=self.user,
+            items=[{"product_id": self.consultation.id, "quantity": 2}],
+        )
+        void_sale(sale)
+
+        self.consultation.refresh_from_db()
+        self.assertEqual(self.consultation.stock_quantity, 0)
+        self.assertEqual(Sale.objects.count(), 0)
+
+    def test_stocked_items_still_run_out(self):
+        """The bypass must be the service flag, not a hole in the stock check."""
+        gloves = Product.objects.create(
+            workspace=self.workspace,
+            name="Examination gloves",
+            unit_selling_price=Decimal("500"),
+            stock_quantity=2,
+        )
+        with self.assertRaises(ValidationError):
+            create_sale(
+                workspace=self.workspace,
+                cashier=self.user,
+                items=[{"product_id": gloves.id, "quantity": 3}],
+            )

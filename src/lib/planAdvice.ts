@@ -53,10 +53,20 @@ function floorForIndustry(industry: IndustryProfile): { plan: PlanId; reason?: s
         reason: "Bar tabs and bottle deposits need the credit and deposit tracking in Growth.",
       };
     case "pharmacy":
+    case "drugshop":
       return {
         plan: "growth",
         reason:
           "Batch and expiry control matter most when several people dispense — Growth covers the team.",
+      };
+    case "clinic":
+    case "medical_centre":
+    case "hospital":
+      return {
+        plan: "enterprise",
+        reason:
+          "A clinic bills consultations, dispenses against them and answers for every " +
+          "batch — several people on one patient, and the audit trail to match.",
       };
     case "hardware":
       return {

@@ -9,7 +9,7 @@ import { useProducts, daysToExpiry, EXPIRY_WARNING_DAYS, type Product } from "@/
 import { ugx, num } from "@/lib/format";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useIndustry } from "@/hooks/useIndustry";
-import { hasFeature } from "@/lib/industry";
+import { hasFeature, isHealth, isServiceCategory } from "@/lib/industry";
 import { useAuth } from "@/hooks/useAuth";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -66,6 +66,7 @@ const blank = {
   unit_of_measure: "",
   batch_number: "",
   prescription_only: false,
+  is_service: false,
 };
 
 function Inventory() {
@@ -130,6 +131,7 @@ function Inventory() {
       unit_of_measure: p.unit_of_measure ?? "",
       batch_number: p.batch_number ?? "",
       prescription_only: p.prescription_only ?? false,
+      is_service: p.is_service ?? false,
     });
     setValueDraft(null);
     setOpen(true);
@@ -137,9 +139,14 @@ function Inventory() {
 
   const save = async () => {
     if (!form.name.trim()) return toast.error("Item name is required");
+    // An untouched form sits on the first category, which for a clinic is
+    // "Consultation & Services" — so read the switch off the category actually
+    // being saved, not the blank one in state. An explicit pick has already set
+    // the switch, and unticking it there is respected.
+    const category = form.category || CATEGORIES[0];
     const payload = {
       name: form.name.trim(),
-      category: form.category || CATEGORIES[0],
+      category,
       unit_buying_price: Number(form.unit_buying_price) || 0,
       // What the supplier actually invoiced. Left null when nobody typed it,
       // so an untouched item does not claim a price it was never given.
@@ -153,6 +160,8 @@ function Inventory() {
       unit_of_measure: form.unit_of_measure,
       batch_number: form.batch_number.trim(),
       prescription_only: form.prescription_only,
+      is_service:
+        form.is_service || (!form.category && isServiceCategory(industry, category)),
     };
     if (editing) await updateRow("products", editing.id, payload);
     // created_by is server-owned on a live session (the serializer ignores it),
@@ -420,7 +429,9 @@ function Inventory() {
             </TableHeader>
             <TableBody>
               {rows.map((p) => {
-                const low = p.stock_quantity <= p.reorder_level;
+                // A service sits at zero stock for ever, so the low badge would
+                // be permanent and mean nothing.
+                const low = !p.is_service && p.stock_quantity <= p.reorder_level;
                 return (
                   <TableRow key={p.id}>
                     <TableCell className="font-medium">{p.name}</TableCell>
@@ -444,15 +455,21 @@ function Inventory() {
                       {p.wholesale_price ? ugx(p.wholesale_price) : "—"}
                     </TableCell>
                     <TableCell className="text-right">
-                      <Badge
-                        variant="outline"
-                        className={cn(
-                          "tabular",
-                          low && "border-warning bg-warning-soft text-warning-foreground",
-                        )}
-                      >
-                        {num(p.stock_quantity)}
-                      </Badge>
+                      {p.is_service ? (
+                        <Badge variant="outline" className="text-[10px]">
+                          service
+                        </Badge>
+                      ) : (
+                        <Badge
+                          variant="outline"
+                          className={cn(
+                            "tabular",
+                            low && "border-warning bg-warning-soft text-warning-foreground",
+                          )}
+                        >
+                          {num(p.stock_quantity)}
+                        </Badge>
+                      )}
                     </TableCell>
                     <TableCell>
                       {(() => {
@@ -550,7 +567,15 @@ function Inventory() {
               <Label>{industry.terms.category}</Label>
               <Select
                 value={form.category || CATEGORIES[0]}
-                onValueChange={(v) => setForm({ ...form, category: v })}
+                // Picking "Consultation & Services" or "Delivery & Hire" is already
+                // the person saying this is not stock; do not make them say it twice.
+                onValueChange={(v) =>
+                  setForm({
+                    ...form,
+                    category: v,
+                    is_service: form.is_service || isServiceCategory(industry, v),
+                  })
+                }
               >
                 <SelectTrigger>
                   <SelectValue />
@@ -670,7 +695,7 @@ function Inventory() {
             {hasFeature(industry, "expiry") && (
               <div className="space-y-1.5 sm:col-span-2">
                 <Label>
-                  Expiry date {industry.id === "pharmacy" ? "" : "(optional)"}
+                  Expiry date {isHealth(industry) ? "" : "(optional)"}
                 </Label>
                 <Input
                   type="date"
@@ -678,6 +703,18 @@ function Inventory() {
                   onChange={(e) => setForm({ ...form, expiry_date: e.target.value })}
                 />
               </div>
+            )}
+            {hasFeature(industry, "service_item") && (
+              <label className="flex items-center gap-2 sm:col-span-2">
+                <Checkbox
+                  checked={form.is_service}
+                  onCheckedChange={(v) => setForm({ ...form, is_service: v === true })}
+                />
+                <span className="text-sm">
+                  A service &mdash; charged but never stocked, so the counter can always
+                  sell it and it stays off the reorder list
+                </span>
+              </label>
             )}
             {hasFeature(industry, "prescription") && (
               <label className="flex items-center gap-2 sm:col-span-2">
