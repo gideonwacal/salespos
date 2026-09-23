@@ -6,6 +6,7 @@ from unittest import mock
 
 from django.test import override_settings
 from django.urls import reverse
+from django.utils import timezone
 from rest_framework.test import APITestCase
 
 from apps.accounts.models import (
@@ -601,3 +602,95 @@ class DefaultPaymentNumberTests(APITestCase):
         mtn = next(c for c in response.data["channels"] if c["id"] == "mtn_momo")
         self.assertIn("{number}", mtn["ussd"])
         self.assertIn("{amount}", mtn["ussd"])
+
+
+class TrialLockTests(APITestCase):
+    """A trial that has run out stops the till, on the server and not just in the browser."""
+
+    def setUp(self):
+        self.owner = User.objects.create_user(email="owner@shop.com", password="sup3rsecret!")
+        self.workspace = Workspace.objects.create(name="Corner Shop")
+        Membership.objects.create(user=self.owner, workspace=self.workspace, role="owner")
+        self.client.force_authenticate(user=self.owner)
+        self.headers = {"HTTP_X_WORKSPACE": str(self.workspace.id)}
+
+    def expire(self):
+        self.workspace.trial_ends = timezone.now() - timedelta(days=1)
+        self.workspace.save(update_fields=["trial_ends"])
+
+    def test_the_shop_works_during_the_trial(self):
+        response = self.client.get("/api/products/", **self.headers)
+        self.assertEqual(response.status_code, 200)
+
+    def test_an_expired_trial_closes_the_data(self):
+        self.expire()
+        response = self.client.get("/api/products/", **self.headers)
+        self.assertEqual(response.status_code, 403)
+        self.assertIn("free trial has ended", str(response.data))
+
+    def test_an_expired_trial_cannot_write_either(self):
+        """Read-only would still let a shop sell all month."""
+        self.expire()
+        response = self.client.post(
+            "/api/products/", {"name": "Sugar 1kg"}, format="json", **self.headers
+        )
+        self.assertEqual(response.status_code, 403)
+
+    def test_paying_reopens_it(self):
+        self.expire()
+        self.workspace.subscribed = True
+        self.workspace.paid_until = timezone.now() + timedelta(days=30)
+        self.workspace.save(update_fields=["subscribed", "paid_until"])
+
+        response = self.client.get("/api/products/", **self.headers)
+        self.assertEqual(response.status_code, 200)
+
+    def test_a_lapsed_subscription_locks_again(self):
+        """Paid once is not paid for ever."""
+        self.expire()
+        self.workspace.subscribed = True
+        self.workspace.paid_until = timezone.now() - timedelta(days=1)
+        self.workspace.save(update_fields=["subscribed", "paid_until"])
+
+        response = self.client.get("/api/products/", **self.headers)
+        self.assertEqual(response.status_code, 403)
+
+    def test_free_access_never_locks(self):
+        """What Pamoja runs on: no trial to run out, no subscription to buy."""
+        self.expire()
+        self.workspace.access = "free"
+        self.workspace.save(update_fields=["access"])
+
+        response = self.client.get("/api/products/", **self.headers)
+        self.assertEqual(response.status_code, 200)
+
+    def test_a_locked_shop_can_still_reach_billing_and_pay(self):
+        """Shutting them out of the payment page would be a trap."""
+        self.expire()
+
+        self.assertEqual(self.client.get("/api/billing/", **self.headers).status_code, 200)
+        self.assertEqual(self.client.get("/api/auth/me/", **self.headers).status_code, 200)
+
+        with override_settings(SUBSCRIPTION_MOMO_NUMBER="0770000000"):
+            reported = self.client.post(
+                "/api/subscription-payments/",
+                {
+                    "plan": "growth",
+                    "months": 1,
+                    "payer_phone": "0771 234 567",
+                    "transaction_id": "LOCKED12345",
+                    "network": "mtn_momo",
+                },
+                format="json",
+                **self.headers,
+            )
+        self.assertEqual(reported.status_code, 201, reported.data)
+
+    def test_suspension_still_says_suspended(self):
+        """Two different problems should not give one message."""
+        self.workspace.access = "suspended"
+        self.workspace.save(update_fields=["access"])
+
+        response = self.client.get("/api/products/", **self.headers)
+        self.assertEqual(response.status_code, 403)
+        self.assertIn("suspended", str(response.data).lower())

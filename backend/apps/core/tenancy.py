@@ -53,6 +53,26 @@ def ensure_workspace_open(workspace):
         )
 
 
+def ensure_workspace_paid(workspace):
+    """Refuse a business that has run out of trial without subscribing.
+
+    The browser already redirects a locked shop to the billing page, but that
+    is a courtesy, not a lock: a stale tab, a second device or anything holding
+    a token would go on working. This is the lock.
+
+    Deliberately not applied to the billing or account endpoints — a shop that
+    cannot reach them could never pay, and shutting someone out of the till is
+    no reason to shut them out of their own record of it.
+    """
+    if workspace is None:
+        return
+    ensure_workspace_open(workspace)
+    if workspace.locked:
+        raise PermissionDenied(
+            "Your free trial has ended. Choose a package on the billing page to carry on."
+        )
+
+
 class WorkspaceViewSet(ModelViewSet):
     """Base viewset that scopes every query and every write to one workspace."""
 
@@ -65,7 +85,9 @@ class WorkspaceViewSet(ModelViewSet):
         request.workspace = workspace
         request.workspace_role = role
         super().initial(request, *args, **kwargs)
-        ensure_workspace_open(workspace)
+        # Every tenant-scoped table goes through here — products, sales,
+        # expenses, debtors — so this one call is the whole lock.
+        ensure_workspace_paid(workspace)
 
     def get_queryset(self):
         return super().get_queryset().filter(workspace=self.request.workspace)

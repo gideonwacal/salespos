@@ -119,6 +119,31 @@ class Workspace(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    @property
+    def subscription_active(self) -> bool:
+        return bool(self.subscribed and self.paid_until and self.paid_until > timezone.now())
+
+    @property
+    def on_trial(self) -> bool:
+        return bool(self.trial_ends and self.trial_ends > timezone.now())
+
+    @property
+    def locked(self) -> bool:
+        """Is this business shut out of its own data right now?
+
+        Free access never locks — that is what the platform owner grants it
+        for. Suspension always does. Everything else is the ordinary path: the
+        trial runs out, and without a live subscription the shop stops until it
+        pays.
+        """
+        if self.access == "free":
+            return False
+        if self.access == "suspended":
+            return True
+        if self.subscription_active:
+            return False
+        return not self.on_trial
+
     class Meta:
         db_table = "workspaces"
         ordering = ["created_at"]
