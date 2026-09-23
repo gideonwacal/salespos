@@ -46,7 +46,7 @@ export function HowToPay({
         </CardTitle>
         <p className="text-xs text-muted-foreground">
           {takesCards
-            ? "Pick a package below to pay by card, or send mobile money to one of these and confirm afterwards."
+            ? "Pick a package below to pay online, or send mobile money to one of these and confirm afterwards."
             : "Pick a package below to pay step by step, or send it directly to any of these and confirm afterwards."}
         </p>
       </CardHeader>
@@ -55,8 +55,8 @@ export function HowToPay({
           <p className="text-sm text-muted-foreground">Loading payment details…</p>
         ) : channels.length === 0 && takesCards ? (
           <p className="text-sm text-muted-foreground">
-            Card is the only way to pay on this SalesPos. Pick a package below and pay on
-            Stripe&apos;s secure page — there is nothing to send by hand.
+            Everything is paid online here. Pick a package below and pay by card or mobile money
+            on the secure page — there is nothing to send by hand.
           </p>
         ) : channels.length === 0 ? (
           <div className="space-y-1 rounded-lg border border-warning/50 bg-warning-soft/40 p-3 text-sm">

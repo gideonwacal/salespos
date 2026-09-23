@@ -120,11 +120,10 @@ export function PaymentDialog({
   };
 
   /**
-   * Hand the shop over to Stripe.
+   * Hand the shop over to Flutterwave.
    *
-   * Nothing is reported back here afterwards: the plan turns on when Stripe's
-   * webhook says the money landed, so a shop that pays and closes the tab is
-   * still paid.
+   * Nothing is reported back from here: the plan turns on when the gateway says
+   * the money landed, so a shop that pays and closes the tab is still paid.
    */
   const goToCard = async () => {
     setBusy(true);
@@ -132,7 +131,7 @@ export function PaymentDialog({
       const { url } = await startCardCheckout({ plan, months });
       window.location.href = url;
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not open the card page.");
+      toast.error(error instanceof Error ? error.message : "Could not open the payment page.");
       setBusy(false);
     }
   };
@@ -353,7 +352,7 @@ export function PaymentDialog({
             {step === "choose" &&
               (channel?.kind === "card" ? (
                 <Button disabled={busy} onClick={goToCard}>
-                  {busy ? "Opening card page…" : "Pay by card"}
+                  {busy ? "Opening payment page…" : "Pay now"}
                 </Button>
               ) : (
                 <Button disabled={!channel} onClick={() => setStep("send")}>

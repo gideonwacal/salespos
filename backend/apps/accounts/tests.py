@@ -2,6 +2,7 @@
 
 from datetime import timedelta
 from decimal import Decimal
+from unittest import mock
 
 from django.test import override_settings
 from django.urls import reverse
@@ -14,6 +15,7 @@ from apps.accounts.models import (
     User,
     Workspace,
 )
+from apps.accounts.views import approve_flutterwave_payment
 from apps.inventory.models import Product
 
 
@@ -379,9 +381,9 @@ class NoPaymentChannelTests(APITestCase):
         self.assertEqual(submitted.status_code, 403)
 
 
-@override_settings(STRIPE_SECRET_KEY="sk_test_x", STRIPE_WEBHOOK_SECRET="whsec_x")
-class StripeCheckoutTests(APITestCase):
-    """Card payments: priced here, charged by Stripe, activated by the webhook."""
+@override_settings(FLUTTERWAVE_SECRET_KEY="FLWSECK_TEST-x", FLUTTERWAVE_SECRET_HASH="hash-x")
+class FlutterwaveCheckoutTests(APITestCase):
+    """Priced here, charged by Flutterwave, activated only after verification."""
 
     def setUp(self):
         self.owner = User.objects.create_user(email="owner@shop.com", password="sup3rsecret!")
@@ -390,35 +392,33 @@ class StripeCheckoutTests(APITestCase):
         Membership.objects.create(user=self.owner, workspace=self.workspace, role="owner")
         Membership.objects.create(user=self.manager, workspace=self.workspace, role="manager")
 
-    def test_card_appears_as_a_channel_once_a_key_is_set(self):
+    def test_the_channel_appears_once_a_key_is_set(self):
         self.client.force_authenticate(user=self.owner)
-        response = self.client.get("/api/billing/")
-        ids = {c["id"] for c in response.data["channels"]}
-        self.assertIn("card_stripe", ids)
+        ids = {c["id"] for c in self.client.get("/api/billing/").data["channels"]}
+        self.assertIn("flutterwave", ids)
 
-    @override_settings(STRIPE_SECRET_KEY="")
-    def test_no_card_channel_without_a_key(self):
+    @override_settings(FLUTTERWAVE_SECRET_KEY="")
+    def test_no_channel_without_a_key(self):
         self.client.force_authenticate(user=self.owner)
-        response = self.client.get("/api/billing/")
-        ids = {c["id"] for c in response.data["channels"]}
-        self.assertNotIn("card_stripe", ids)
+        ids = {c["id"] for c in self.client.get("/api/billing/").data["channels"]}
+        self.assertNotIn("flutterwave", ids)
 
-    def test_a_manager_cannot_start_a_card_payment(self):
+    def test_a_manager_cannot_start_a_payment(self):
         self.client.force_authenticate(user=self.manager)
         response = self.client.post(
             "/api/billing/checkout/", {"plan": "growth", "months": 1}, format="json"
         )
         self.assertEqual(response.status_code, 403)
 
-    def test_the_plan_and_months_are_checked_before_stripe_is_called(self):
+    def test_plan_and_months_are_checked_before_flutterwave_is_called(self):
         self.client.force_authenticate(user=self.owner)
         for body in ({"plan": "platinum", "months": 1}, {"plan": "growth", "months": 7}):
             response = self.client.post("/api/billing/checkout/", body, format="json")
             self.assertEqual(response.status_code, 400, body)
         self.assertFalse(SubscriptionPayment.objects.exists())
 
-    def test_a_card_payment_cannot_be_reported_by_hand(self):
-        """Otherwise anyone could claim a card payment and be believed."""
+    def test_a_gateway_payment_cannot_be_reported_by_hand(self):
+        """Otherwise anyone could claim they paid online and be believed."""
         self.client.force_authenticate(user=self.owner)
         response = self.client.post(
             "/api/subscription-payments/",
@@ -426,17 +426,51 @@ class StripeCheckoutTests(APITestCase):
                 "plan": "growth",
                 "months": 1,
                 "payer_phone": "0771 234 567",
-                "transaction_id": "CARD123456",
-                "network": "card_stripe",
+                "transaction_id": "FLW123456",
+                "network": "flutterwave",
             },
             format="json",
         )
         self.assertEqual(response.status_code, 400)
         self.assertFalse(SubscriptionPayment.objects.exists())
 
+    def test_a_refused_start_leaves_no_pending_row_behind(self):
+        """Nothing was charged, so nothing should sit waiting for confirmation."""
+        self.client.force_authenticate(user=self.owner)
+        with mock.patch(
+            "apps.accounts.views.flutterwave_request",
+            return_value={"status": "error", "message": "no"},
+        ):
+            response = self.client.post(
+                "/api/billing/checkout/", {"plan": "growth", "months": 1}, format="json"
+            )
+        self.assertEqual(response.status_code, 502)
+        self.assertFalse(SubscriptionPayment.objects.exists())
 
-class StripeWebhookTests(APITestCase):
-    """The signature is the only thing between a stranger and a free plan."""
+    def test_a_started_payment_is_pending_and_keyed_by_our_own_reference(self):
+        self.client.force_authenticate(user=self.owner)
+        with mock.patch(
+            "apps.accounts.views.flutterwave_request",
+            return_value={"status": "success", "data": {"link": "https://pay.example/x"}},
+        ):
+            response = self.client.post(
+                "/api/billing/checkout/", {"plan": "growth", "months": 3}, format="json"
+            )
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["url"], "https://pay.example/x")
+
+        payment = SubscriptionPayment.objects.get()
+        self.assertEqual(payment.status, "pending")
+        self.assertEqual(payment.network, "flutterwave")
+        self.assertEqual(payment.amount, PLAN_PRICES_UGX["growth"] * 3)
+        self.assertTrue(payment.transaction_id.startswith("salespos-"))
+        self.workspace.refresh_from_db()
+        self.assertFalse(self.workspace.subscribed)
+
+
+@override_settings(FLUTTERWAVE_SECRET_KEY="FLWSECK_TEST-x", FLUTTERWAVE_SECRET_HASH="hash-x")
+class FlutterwaveApprovalTests(APITestCase):
+    """The verification call decides, not the browser and not the payload."""
 
     def setUp(self):
         self.workspace = Workspace.objects.create(name="Shop")
@@ -445,56 +479,150 @@ class StripeWebhookTests(APITestCase):
             plan="growth",
             months=1,
             amount=PLAN_PRICES_UGX["growth"],
-            network="card_stripe",
+            currency="UGX",
+            network="flutterwave",
             payer_phone="card",
-            transaction_id="cs_test_123",
+            transaction_id="salespos-abc",
         )
 
-    @override_settings(STRIPE_WEBHOOK_SECRET="whsec_x")
-    def test_an_unsigned_event_is_refused(self):
-        response = self.client.post(
-            "/api/billing/stripe-webhook/",
-            data='{"type": "checkout.session.completed"}',
-            content_type="application/json",
-        )
-        self.assertEqual(response.status_code, 400)
+    def verified(self, **overrides):
+        data = {
+            "status": "successful",
+            "amount": PLAN_PRICES_UGX["growth"],
+            "currency": "UGX",
+            "tx_ref": "salespos-abc",
+            **overrides,
+        }
+        return {"status": "success", "data": data}
 
-        self.payment.refresh_from_db()
-        self.workspace.refresh_from_db()
-        self.assertEqual(self.payment.status, "pending")
-        self.assertFalse(self.workspace.subscribed)
+    def test_a_verified_payment_activates_the_plan(self):
+        with mock.patch("apps.accounts.views.flutterwave_request", return_value=self.verified()):
+            self.assertTrue(approve_flutterwave_payment("99"))
 
-    @override_settings(STRIPE_WEBHOOK_SECRET="")
-    def test_a_deployment_with_no_webhook_secret_accepts_nothing(self):
-        response = self.client.post(
-            "/api/billing/stripe-webhook/",
-            data='{"type": "checkout.session.completed"}',
-            content_type="application/json",
-        )
-        self.assertEqual(response.status_code, 400)
-        self.workspace.refresh_from_db()
-        self.assertFalse(self.workspace.subscribed)
-
-    def test_approving_the_payment_activates_the_plan(self):
-        """What the webhook does once the signature checks out."""
-        self.payment.approve()
         self.workspace.refresh_from_db()
         self.assertTrue(self.workspace.subscribed)
         self.assertEqual(self.workspace.plan, "growth")
 
-        # Stripe retries until it gets a 2xx, so approving twice must not
-        # hand out two months for one payment.
-        first_until = self.workspace.paid_until
-        self.payment.approve()
+    def test_verifying_twice_does_not_pay_for_two_months(self):
+        with mock.patch("apps.accounts.views.flutterwave_request", return_value=self.verified()):
+            approve_flutterwave_payment("99")
+            self.workspace.refresh_from_db()
+            first_until = self.workspace.paid_until
+
+            approve_flutterwave_payment("99")
+
         self.workspace.refresh_from_db()
         self.assertEqual(self.workspace.paid_until, first_until)
 
+    def test_an_underpayment_is_refused(self):
+        """The row says what was owed; the gateway says what arrived."""
+        with mock.patch(
+            "apps.accounts.views.flutterwave_request",
+            return_value=self.verified(amount=1000),
+        ):
+            self.assertFalse(approve_flutterwave_payment("99"))
 
-class StripeAmountTests(APITestCase):
-    def test_shillings_are_sent_whole(self):
-        """UGX is zero-decimal at Stripe; multiplying by 100 would overcharge."""
-        from apps.accounts.views import stripe_amount
+        self.payment.refresh_from_db()
+        self.workspace.refresh_from_db()
+        self.assertEqual(self.payment.status, "rejected")
+        self.assertFalse(self.workspace.subscribed)
 
-        self.assertEqual(stripe_amount(50_000, "UGX"), 50_000)
-        self.assertEqual(stripe_amount(50_000, "ugx"), 50_000)
-        self.assertEqual(stripe_amount(50, "USD"), 5_000)
+    def test_the_wrong_currency_is_refused(self):
+        with mock.patch(
+            "apps.accounts.views.flutterwave_request",
+            return_value=self.verified(currency="KES"),
+        ):
+            self.assertFalse(approve_flutterwave_payment("99"))
+
+        self.workspace.refresh_from_db()
+        self.assertFalse(self.workspace.subscribed)
+
+    def test_an_unsuccessful_transaction_is_refused(self):
+        with mock.patch(
+            "apps.accounts.views.flutterwave_request",
+            return_value=self.verified(status="failed"),
+        ):
+            self.assertFalse(approve_flutterwave_payment("99"))
+
+        self.workspace.refresh_from_db()
+        self.assertFalse(self.workspace.subscribed)
+
+
+class FlutterwaveWebhookTests(APITestCase):
+    """The shared hash is the only thing between a stranger and a free plan."""
+
+    def setUp(self):
+        self.workspace = Workspace.objects.create(name="Shop")
+        self.payment = SubscriptionPayment.objects.create(
+            workspace=self.workspace,
+            plan="growth",
+            months=1,
+            amount=PLAN_PRICES_UGX["growth"],
+            currency="UGX",
+            network="flutterwave",
+            payer_phone="card",
+            transaction_id="salespos-abc",
+        )
+        self.body = {"data": {"id": 99, "tx_ref": "salespos-abc", "status": "successful"}}
+
+    @override_settings(FLUTTERWAVE_SECRET_HASH="hash-x")
+    def test_a_wrong_hash_is_refused(self):
+        response = self.client.post(
+            "/api/billing/flutterwave-webhook/",
+            self.body,
+            format="json",
+            HTTP_VERIF_HASH="not-the-hash",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.workspace.refresh_from_db()
+        self.assertFalse(self.workspace.subscribed)
+
+    @override_settings(FLUTTERWAVE_SECRET_HASH="hash-x")
+    def test_a_missing_hash_is_refused(self):
+        response = self.client.post(
+            "/api/billing/flutterwave-webhook/", self.body, format="json"
+        )
+        self.assertEqual(response.status_code, 400)
+        self.workspace.refresh_from_db()
+        self.assertFalse(self.workspace.subscribed)
+
+    @override_settings(FLUTTERWAVE_SECRET_HASH="")
+    def test_a_deployment_with_no_hash_accepts_nothing(self):
+        response = self.client.post(
+            "/api/billing/flutterwave-webhook/",
+            self.body,
+            format="json",
+            HTTP_VERIF_HASH="anything",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.workspace.refresh_from_db()
+        self.assertFalse(self.workspace.subscribed)
+
+    @override_settings(
+        FLUTTERWAVE_SECRET_HASH="hash-x", FLUTTERWAVE_SECRET_KEY="FLWSECK_TEST-x"
+    )
+    def test_a_signed_event_is_still_verified_before_it_counts(self):
+        """A correct hash proves who sent it, not that the money arrived."""
+        with mock.patch(
+            "apps.accounts.views.flutterwave_request",
+            return_value={
+                "status": "success",
+                "data": {
+                    "status": "successful",
+                    "amount": PLAN_PRICES_UGX["growth"],
+                    "currency": "UGX",
+                    "tx_ref": "salespos-abc",
+                },
+            },
+        ) as verify:
+            response = self.client.post(
+                "/api/billing/flutterwave-webhook/",
+                self.body,
+                format="json",
+                HTTP_VERIF_HASH="hash-x",
+            )
+
+        self.assertEqual(response.status_code, 200)
+        verify.assert_called_once()
+        self.workspace.refresh_from_db()
+        self.assertTrue(self.workspace.subscribed)

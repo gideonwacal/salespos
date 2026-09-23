@@ -436,14 +436,28 @@ export function fetchBillingInfo() {
 }
 
 /**
- * Start a card payment.
+ * Start an online payment.
  *
- * Returns the Stripe Checkout URL to send the browser to; the plan is turned on
- * by Stripe's webhook, not by anything the browser reports back, so closing the
- * tab after paying still leaves the shop paid.
+ * Returns the Flutterwave URL to send the browser to. The plan is turned on by
+ * the webhook, not by anything the browser reports back, so closing the tab
+ * after paying still leaves the shop paid.
  */
 export function startCardCheckout(input: { plan: string; months: number }) {
   return request<{ url: string; id: string }>("/billing/checkout/", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+/**
+ * Ask the server to check a payment the shop has just come back from.
+ *
+ * Belt and braces over the webhook: it makes the usual case instant instead of
+ * leaving an owner staring at an unchanged plan. The server asks Flutterwave
+ * what happened, so nothing here can be talked into approving anything.
+ */
+export function verifyCardPayment(input: { transaction_id: string; tx_ref?: string }) {
+  return request<{ approved: boolean }>("/billing/verify/", {
     method: "POST",
     body: JSON.stringify(input),
   });

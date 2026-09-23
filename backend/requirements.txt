@@ -6,9 +6,9 @@ django-cors-headers>=4.6
 dj-database-url>=2.3
 python-dotenv>=1.0
 django-filter>=24.3
-# Card payments. Only reached when STRIPE_SECRET_KEY is set; the import itself
-# is cheap and keeps the settings check honest.
-stripe>=11.0
+# Talking to Flutterwave: two endpoints, one to start a payment and one to
+# verify it. Only reached when FLUTTERWAVE_SECRET_KEY is set.
+requests>=2.32
 
 # Production serving. The dev server is single-threaded and explicitly
 # not for real traffic.

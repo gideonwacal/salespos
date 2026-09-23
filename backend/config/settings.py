@@ -249,36 +249,34 @@ SUBSCRIPTION_BANK_ACCOUNT_NUMBER = os.environ.get(
 ).strip()
 SUBSCRIPTION_BANK_BRANCH = os.environ.get("SUBSCRIPTION_BANK_BRANCH", "").strip()
 
-# Card payments through Stripe Checkout.
+# Online payments through Flutterwave.
 #
-# Stripe hosts the card form, so no card number ever touches this server or the
-# browser bundle, and 3-D Secure, Apple Pay and Google Pay come with it. The
-# card channel only appears on the billing page once a secret key is set.
+# Flutterwave hosts the payment page, so no card number touches this server or
+# the browser bundle — and the same page takes MTN and Airtel money, which is
+# why it is here rather than a card-only gateway. The channel only appears on
+# the billing page once a secret key is set.
 #
-# The webhook secret is separate and just as required: without it a stranger
-# could POST a "payment succeeded" event and activate their own plan for free.
-STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY", "").strip()
-STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "").strip()
+# The secret hash is separate and just as required: it is the shared value
+# Flutterwave sends back in the `verif-hash` header, and without it a stranger
+# could POST "payment successful" and activate their own plan for free.
+FLUTTERWAVE_SECRET_KEY = os.environ.get("FLUTTERWAVE_SECRET_KEY", "").strip()
+FLUTTERWAVE_SECRET_HASH = os.environ.get("FLUTTERWAVE_SECRET_HASH", "").strip()
 
-# Where Stripe sends the shop back to. The billing page reads the result from
-# the query string; falling back to the first allowed origin means a normal
-# deployment needs no extra setting.
+# Which methods the hosted page offers. Ugandan mobile money is listed first
+# because most shops will reach for it before a card.
+FLUTTERWAVE_PAYMENT_OPTIONS = os.environ.get(
+    "FLUTTERWAVE_PAYMENT_OPTIONS", "mobilemoneyuganda, card, ussd, banktransfer"
+).strip()
+
+# Where Flutterwave sends the shop back to. The billing page reads the result
+# from the query string; falling back to the first allowed origin means a
+# normal deployment needs no extra setting.
 APP_BASE_URL = os.environ.get("APP_BASE_URL", "").strip().rstrip("/")
 if not APP_BASE_URL and CORS_ALLOWED_ORIGINS:
     APP_BASE_URL = CORS_ALLOWED_ORIGINS[0].rstrip("/")
 
-# Shillings have no minor unit, and Stripe agrees: UGX is one of its
-# zero-decimal currencies, so an amount is sent as whole shillings rather than
-# multiplied by 100. Getting this wrong overcharges a shop a hundredfold.
-STRIPE_ZERO_DECIMAL_CURRENCIES = {
-    "BIF", "CLP", "DJF", "GNF", "JPY", "KMF", "KRW", "MGA",
-    "PYG", "RWF", "UGX", "VND", "VUV", "XAF", "XOF", "XPF",
-}
-
-
-# The helper that uses this lives in apps.accounts.views: django.conf.settings
-# only exposes UPPERCASE names, so a function defined here would be invisible
-# to anything reading it through `settings.`.
+# Flutterwave takes amounts in whole currency units — 50000 means fifty
+# thousand shillings, not five hundred. No minor-unit arithmetic to get wrong.
 
 # Rate limits on the billing endpoints: enough for a real shop, too few to
 # scrape the payment number or flood the admin with made-up transaction IDs.

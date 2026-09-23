@@ -1,3 +1,7 @@
+import secrets
+import uuid
+from decimal import Decimal
+
 from django.conf import settings
 from django.db import transaction
 from django.utils.cache import add_never_cache_headers
@@ -252,20 +256,20 @@ def payment_channels() -> list:
             }
         )
 
-    if settings.STRIPE_SECRET_KEY:
+    if settings.FLUTTERWAVE_SECRET_KEY:
         channels.append(
             {
-                "id": "card_stripe",
+                "id": "flutterwave",
                 "kind": "card",
-                "label": "Card",
-                # Filled in by Stripe's own page, so there is nothing to copy
-                # and nothing to type back afterwards.
+                "label": "Pay now — card or mobile money",
+                # Filled in on Flutterwave's page, so there is nothing to copy
+                # here and nothing to type back afterwards.
                 "account": "",
-                "account_label": "Visa, Mastercard and mobile wallets",
+                "account_label": "Visa, Mastercard, MTN MoMo, Airtel Money",
                 "holder": "",
                 "instructions": (
-                    "You will be taken to Stripe's secure page to enter the card. "
-                    "Your plan activates the moment the payment goes through."
+                    "You will be taken to Flutterwave's secure page to pay. "
+                    "Your plan turns on the moment the payment goes through."
                 ),
                 "reference_label": "",
                 "reference_hint": "",
@@ -335,28 +339,80 @@ class BillingInfoView(APIView):
         return response
 
 
-def stripe_amount(total: int, currency: str = "UGX") -> int:
-    """What Stripe wants in `unit_amount` for this total.
+def flutterwave_request(method: str, path: str, payload: dict | None = None) -> dict:
+    """Call Flutterwave with the secret key, and hand back the parsed body.
 
-    Shillings have no minor unit and Stripe agrees — UGX is one of its
-    zero-decimal currencies — so the amount goes as whole shillings. Sending it
-    times a hundred, as one does for dollars, would charge a shop a hundredfold.
+    Kept deliberately small: two endpoints are used, one to start a payment and
+    one to verify it, and both answer the same {status, message, data} shape.
     """
-    if currency.upper() in settings.STRIPE_ZERO_DECIMAL_CURRENCIES:
-        return int(total)
-    return int(total) * 100
+    import requests
+
+    response = requests.request(
+        method,
+        f"https://api.flutterwave.com/v3{path}",
+        json=payload,
+        headers={
+            "Authorization": f"Bearer {settings.FLUTTERWAVE_SECRET_KEY}",
+            "Content-Type": "application/json",
+        },
+        timeout=20,
+    )
+    try:
+        return response.json()
+    except ValueError:
+        return {"status": "error", "message": f"Flutterwave replied {response.status_code}"}
 
 
-class StripeCheckoutView(APIView):
-    """POST /api/billing/checkout/ — start a card payment for a plan.
+def approve_flutterwave_payment(transaction_id, tx_ref=None) -> bool:
+    """Verify a transaction with Flutterwave, then activate the plan it paid for.
 
-    Stripe hosts the card form: we create a Checkout Session and hand back its
-    URL, so no card number ever reaches this server or the browser bundle.
+    The callback and the webhook both land here, and neither is trusted for the
+    amount: Flutterwave is asked directly what was paid, and the answer is
+    checked against the row we wrote before the shop ever left. A payment that
+    comes back short, in the wrong currency, or against a plan nobody started is
+    refused rather than honoured.
 
-    A pending SubscriptionPayment is written before the shop leaves, keyed by
-    the session id. That row is what the webhook approves, and it is also why a
-    shop that pays and then closes the tab still gets its plan — the money is
-    already tied to a record here.
+    Safe to run twice. approve() is a no-op once approved, which is what makes
+    a webhook retry — and a shop that also lands on the redirect — harmless.
+    """
+    if not transaction_id:
+        return False
+
+    body = flutterwave_request("GET", f"/transactions/{transaction_id}/verify")
+    data = body.get("data") or {}
+    if body.get("status") != "success" or data.get("status") != "successful":
+        return False
+
+    reference = data.get("tx_ref") or tx_ref
+    payment = SubscriptionPayment.objects.filter(transaction_id=reference).first()
+    if payment is None:
+        return False
+    if payment.status == "approved":
+        return True
+
+    # What Flutterwave says was actually paid, against what we asked for.
+    paid = Decimal(str(data.get("amount") or 0))
+    currency = str(data.get("currency") or "").upper()
+    if currency != payment.currency.upper() or paid < payment.amount:
+        payment.status = "rejected"
+        payment.note = f"Paid {paid} {currency}, expected {payment.amount} {payment.currency}"
+        payment.save(update_fields=["status", "note"])
+        return False
+
+    payment.approve()
+    return True
+
+
+class FlutterwaveCheckoutView(APIView):
+    """POST /api/billing/checkout/ — start a card or mobile money payment.
+
+    Flutterwave hosts the payment page, so no card number reaches this server
+    or the browser bundle, and the same page takes MTN and Airtel money — which
+    is the whole reason for choosing it here rather than a card-only gateway.
+
+    The pending payment row is written before the shop leaves, keyed by our own
+    reference. That row is what the webhook approves, and it is why a shop that
+    pays and then closes the tab is still paid.
     """
 
     permission_classes = [IsAuthenticated]
@@ -372,7 +428,7 @@ class StripeCheckoutView(APIView):
         if workspace is None or role != "owner":
             self.permission_denied(request, message="Only the workspace owner can pay.")
         ensure_workspace_open(workspace)
-        if not settings.STRIPE_SECRET_KEY:
+        if not settings.FLUTTERWAVE_SECRET_KEY:
             self.permission_denied(request, message="Card payments are not set up yet.")
 
         plan = str(request.data.get("plan", "")).strip()
@@ -388,124 +444,129 @@ class StripeCheckoutView(APIView):
         # Priced here, never by the browser.
         total = PLAN_PRICES_UGX[plan] * months
         currency = "UGX"
+        # Ours, not theirs: the reference we will recognise when the money
+        # comes back, however it comes back.
+        tx_ref = f"salespos-{uuid.uuid4().hex[:20]}"
 
-        import stripe
-
-        stripe.api_key = settings.STRIPE_SECRET_KEY
-        base = settings.APP_BASE_URL or ""
-
-        try:
-            session = stripe.checkout.Session.create(
-                mode="payment",
-                success_url=f"{base}/billing?checkout=success",
-                cancel_url=f"{base}/billing?checkout=cancelled",
-                client_reference_id=str(workspace.id),
-                customer_email=request.user.email or None,
-                line_items=[
-                    {
-                        "quantity": 1,
-                        "price_data": {
-                            "currency": currency.lower(),
-                            "unit_amount": stripe_amount(total, currency),
-                            "product_data": {
-                                "name": f"SalesPos {plan.title()} plan",
-                                "description": f"{months} month{'s' if months != 1 else ''} for {workspace.name}",
-                            },
-                        },
-                    }
-                ],
-                metadata={
-                    "workspace_id": str(workspace.id),
-                    "plan": plan,
-                    "months": str(months),
-                },
-            )
-        except Exception as error:  # noqa: BLE001 — Stripe raises a family of these
-            # Whatever Stripe objected to, the shop cannot act on the traceback.
-            return Response(
-                {"detail": f"Could not start the card payment: {error}"},
-                status=status.HTTP_502_BAD_GATEWAY,
-            )
-
-        SubscriptionPayment.objects.create(
+        payment = SubscriptionPayment.objects.create(
             workspace=workspace,
             submitted_by=request.user,
             plan=plan,
             months=months,
             amount=total,
             currency=currency,
-            network="card_stripe",
+            network="flutterwave",
             payer_phone=request.user.phone or workspace.phone or "card",
-            transaction_id=session.id,
+            transaction_id=tx_ref,
             status="pending",
         )
 
-        return Response({"url": session.url, "id": session.id})
+        base = settings.APP_BASE_URL or ""
+        body = flutterwave_request(
+            "POST",
+            "/payments",
+            {
+                "tx_ref": tx_ref,
+                "amount": str(total),
+                "currency": currency,
+                "redirect_url": f"{base}/billing",
+                "payment_options": settings.FLUTTERWAVE_PAYMENT_OPTIONS,
+                "customer": {
+                    "email": request.user.email,
+                    "phonenumber": request.user.phone or workspace.phone or "",
+                    "name": request.user.full_name or workspace.name,
+                },
+                "customizations": {
+                    "title": "SalesPos subscription",
+                    "description": (
+                        f"{plan.title()} plan · {months} month"
+                        f"{'s' if months != 1 else ''} for {workspace.name}"
+                    ),
+                },
+                "meta": {
+                    "workspace_id": str(workspace.id),
+                    "plan": plan,
+                    "months": str(months),
+                },
+            },
+        )
+
+        link = (body.get("data") or {}).get("link")
+        if body.get("status") != "success" or not link:
+            # Nothing was charged, so the row we just wrote would sit pending
+            # for ever. Take it back out.
+            payment.delete()
+            return Response(
+                {"detail": body.get("message") or "Could not start the payment."},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+
+        return Response({"url": link, "id": tx_ref})
 
 
-class StripeWebhookView(APIView):
-    """POST /api/billing/stripe-webhook/ — Stripe telling us the money landed.
+class FlutterwaveVerifyView(APIView):
+    """POST /api/billing/verify/ — the shop is back from the payment page.
 
-    Open to the world by necessity, so the signature is the only thing standing
-    between a stranger and a free Enterprise plan. Unsigned, wrongly signed, or
-    sent to a deployment with no webhook secret: all refused.
+    The webhook is what this really relies on, but webhooks get misconfigured
+    and retried late, and a shop staring at an unchanged plan after paying will
+    not wait patiently. Verifying on the way back costs one call and makes the
+    common case instant. It cannot be used to fake anything: the answer comes
+    from Flutterwave, not from the browser.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        workspace, role = resolve_workspace(request)
+        if workspace is None or role != "owner":
+            self.permission_denied(request, message="Only the workspace owner can pay.")
+        if not settings.FLUTTERWAVE_SECRET_KEY:
+            self.permission_denied(request, message="Card payments are not set up yet.")
+
+        transaction_id = str(request.data.get("transaction_id", "")).strip()
+        tx_ref = str(request.data.get("tx_ref", "")).strip()
+        if not transaction_id:
+            raise ValidationError({"transaction_id": "Nothing to verify."})
+
+        # Only ever for this workspace's own reference.
+        if tx_ref and not SubscriptionPayment.objects.filter(
+            transaction_id=tx_ref, workspace=workspace
+        ).exists():
+            raise ValidationError({"tx_ref": "That payment does not belong to this business."})
+
+        approved = approve_flutterwave_payment(transaction_id, tx_ref)
+        return Response({"approved": approved})
+
+
+class FlutterwaveWebhookView(APIView):
+    """POST /api/billing/flutterwave-webhook/ — Flutterwave saying money landed.
+
+    Open to the world by necessity, so the shared hash is the only thing
+    standing between a stranger and a free Enterprise plan. A missing or wrong
+    hash is refused, and so is every event on a deployment that never set one.
     """
 
     permission_classes = [AllowAny]
     authentication_classes: list = []
 
     def post(self, request):
-        secret = settings.STRIPE_WEBHOOK_SECRET
-        if not secret:
+        expected = settings.FLUTTERWAVE_SECRET_HASH
+        if not expected:
             return Response({"detail": "Webhook not configured."}, status=400)
 
-        import stripe
-
-        try:
-            event = stripe.Webhook.construct_event(
-                payload=request.body,
-                sig_header=request.META.get("HTTP_STRIPE_SIGNATURE", ""),
-                secret=secret,
-            )
-        except Exception:  # noqa: BLE001 — bad signature or unparseable body
+        # Flutterwave sends the hash verbatim; compare in constant time so the
+        # endpoint cannot be used to guess it one character at a time.
+        sent = request.META.get("HTTP_VERIF_HASH", "")
+        if not sent or not secrets.compare_digest(str(sent), expected):
             return Response({"detail": "Invalid signature."}, status=400)
 
-        if event["type"] == "checkout.session.completed":
-            session = event["data"]["object"]
-            # Only a paid session counts: a completed session can still be
-            # awaiting an asynchronous method.
-            if session.get("payment_status") == "paid":
-                self._approve(session.get("id"))
+        payload = request.data if isinstance(request.data, dict) else {}
+        data = payload.get("data") or {}
+        if str(data.get("status", "")).lower() == "successful":
+            approve_flutterwave_payment(data.get("id"), data.get("tx_ref"))
 
-        elif event["type"] == "checkout.session.async_payment_succeeded":
-            self._approve(event["data"]["object"].get("id"))
-
-        elif event["type"] in (
-            "checkout.session.expired",
-            "checkout.session.async_payment_failed",
-        ):
-            payment = SubscriptionPayment.objects.filter(
-                transaction_id=event["data"]["object"].get("id"), status="pending"
-            ).first()
-            if payment is not None:
-                payment.status = "rejected"
-                payment.note = "Card payment not completed"
-                payment.save(update_fields=["status", "note"])
-
-        # Anything else is noise we did not subscribe to; 200 stops Stripe retrying.
+        # Anything else is noise; 200 stops Flutterwave retrying it for ever.
         return Response({"received": True})
-
-    def _approve(self, session_id):
-        """Activate the plan this session paid for, once.
-
-        approve() is a no-op on an already-approved payment, which is what
-        makes a repeated webhook — Stripe retries until it gets a 2xx — safe.
-        """
-        if not session_id:
-            return
-        payment = SubscriptionPayment.objects.filter(transaction_id=session_id).first()
-        if payment is not None:
-            payment.approve()
 
 
 class SubscriptionPaymentViewSet(viewsets.ModelViewSet):
@@ -542,11 +603,11 @@ class SubscriptionPaymentViewSet(viewsets.ModelViewSet):
         chosen = serializer.validated_data.get("network") or "mtn_momo"
         if chosen not in channels:
             raise ValidationError({"network": "That payment method is not available."})
-        # A card payment is confirmed by Stripe's webhook, never by someone
+        # An online payment is confirmed by the gateway, never by someone
         # typing a reference in: accepting one here would be accepting a claim.
-        if chosen == "card_stripe":
+        if chosen == "flutterwave":
             raise ValidationError(
-                {"network": "Card payments are completed on the card page, not reported here."}
+                {"network": "Online payments are completed on the payment page, not reported here."}
             )
         serializer.save(
             workspace=self.request.workspace,

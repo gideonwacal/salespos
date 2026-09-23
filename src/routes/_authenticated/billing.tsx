@@ -14,7 +14,12 @@ import {
   type ModuleId,
   type PlanId,
 } from "@/lib/demo";
-import { fetchBillingInfo, fetchMe, listSubscriptionPayments } from "@/lib/api";
+import {
+  fetchBillingInfo,
+  fetchMe,
+  listSubscriptionPayments,
+  verifyCardPayment,
+} from "@/lib/api";
 import { businessFrom } from "@/lib/auth";
 import { isServerTable } from "@/lib/db";
 import { PaymentDialog } from "@/components/PaymentDialog";
@@ -109,28 +114,48 @@ function Billing() {
   });
   const pending = payments.filter((p) => p.status === "pending");
 
-  // Stripe sends the shop back here with ?checkout=success. The plan is turned
-  // on by the webhook, not by this redirect, so all this does is say so and ask
-  // the server again — then clear the parameter so a refresh does not repeat it.
+  // Flutterwave sends the shop back here with ?status=...&tx_ref=...&
+  // transaction_id=... The webhook is what really turns the plan on, but it can
+  // arrive late or be misconfigured, so we also ask the server to check — the
+  // answer comes from Flutterwave either way, never from these parameters.
+  // Then the query string is cleared so a refresh cannot replay it.
   useEffect(() => {
     if (typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
-    const result = params.get("checkout");
-    if (!result) return;
+    const result = (params.get("status") ?? "").toLowerCase();
+    const transactionId = params.get("transaction_id") ?? "";
+    const txRef = params.get("tx_ref") ?? "";
+    if (!result && !transactionId) return;
 
-    if (result === "success") {
-      toast.success("Card payment received — your plan is being turned on.");
-      queryClient.invalidateQueries({ queryKey: ["subscription-payments"] });
-    } else if (result === "cancelled") {
-      toast.info("Card payment cancelled. Nothing was charged.");
+    const clean = () => {
+      for (const key of ["status", "tx_ref", "transaction_id"]) params.delete(key);
+      const query = params.toString();
+      window.history.replaceState(
+        {},
+        "",
+        `${window.location.pathname}${query ? `?${query}` : ""}`,
+      );
+    };
+
+    if (result === "successful" || result === "completed") {
+      verifyCardPayment({ transaction_id: transactionId, tx_ref: txRef })
+        .then(({ approved }) => {
+          toast.success(
+            approved
+              ? "Payment confirmed — your plan is active."
+              : "Payment received. Your plan turns on as soon as it is confirmed.",
+          );
+        })
+        .catch(() => {
+          toast.info("Payment received. Your plan turns on as soon as it is confirmed.");
+        })
+        .finally(() => {
+          queryClient.invalidateQueries({ queryKey: ["subscription-payments"] });
+        });
+    } else if (result) {
+      toast.error("That payment did not go through. Nothing was charged.");
     }
-    params.delete("checkout");
-    const query = params.toString();
-    window.history.replaceState(
-      {},
-      "",
-      `${window.location.pathname}${query ? `?${query}` : ""}`,
-    );
+    clean();
   }, [queryClient]);
 
   const pay = (id: PlanId) => {

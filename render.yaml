@@ -57,16 +57,19 @@ services:
         sync: false
       - key: SUBSCRIPTION_BANK_BRANCH
         sync: false
-      # Stripe card payments. The secret key makes the card option appear; the
-      # webhook secret is what turns a paid card into an active plan. Set the
-      # webhook in the Stripe dashboard to:
-      #   https://<this-service>.onrender.com/api/billing/stripe-webhook/
-      # listening for checkout.session.completed.
-      - key: STRIPE_SECRET_KEY
+      # Flutterwave: cards and Ugandan mobile money on one hosted page. The
+      # secret key makes the option appear; the secret hash is what turns a
+      # completed payment into an active plan. In the Flutterwave dashboard set
+      # Settings -> Webhooks to:
+      #   https://<this-service>.onrender.com/api/billing/flutterwave-webhook/
+      # with the same secret hash you put here.
+      - key: FLUTTERWAVE_SECRET_KEY
         sync: false
-      - key: STRIPE_WEBHOOK_SECRET
+      - key: FLUTTERWAVE_SECRET_HASH
         sync: false
-      # Your Vercel URL, so Stripe returns the shop to the billing page.
+      - key: FLUTTERWAVE_PAYMENT_OPTIONS
+        sync: false
+      # Your Vercel URL, so Flutterwave returns the shop to the billing page.
       - key: APP_BASE_URL
         sync: false
       - key: JWT_ACCESS_MINUTES
