@@ -18,6 +18,8 @@ type AuthValue = {
   role: AppRole | null;
   fullName: string;
   isOwner: boolean;
+  /** An owner who has not confirmed their address yet: signed in, but held. */
+  needsVerification: boolean;
   demo: boolean;
   /** True when this session is backed by Django rather than local storage. */
   live: boolean;
@@ -32,6 +34,7 @@ const AuthContext = createContext<AuthValue>({
   role: null,
   fullName: "",
   isOwner: false,
+  needsVerification: false,
   demo: false,
   live: false,
   loading: true,
@@ -59,6 +62,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             email: me.user.email,
             full_name: me.user.full_name,
             role: me.role ?? "manager",
+            // Older servers do not send it; absent means nothing to confirm.
+            email_verified: me.user.email_verified ?? true,
           });
 
           // The workspace row is the one copy of the business profile, and the
@@ -109,6 +114,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         role: user?.role ?? null,
         fullName: user?.full_name ?? "",
         isOwner: user?.role === "owner",
+        // Only ever asked of an owner. A cashier was vouched for by whoever
+        // created their login and has no address of their own on file.
+        needsVerification: user?.role === "owner" && user?.email_verified === false,
         demo,
         live,
         loading,

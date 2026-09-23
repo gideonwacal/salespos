@@ -24,6 +24,7 @@ import { startTour } from "@/lib/tour";
 import { EodSummaryDialog } from "@/components/EodSummary";
 import { useDebts, debtStatus, outstanding } from "@/lib/data";
 import { useAuth } from "@/hooks/useAuth";
+import { VerifyBanner } from "@/components/VerifyBanner";
 import { useBusiness } from "@/hooks/useBusiness";
 import { useIndustry } from "@/hooks/useIndustry";
 import { APP, money } from "@/lib/format";
@@ -241,7 +242,10 @@ export function AppShell({ children }: { children: ReactNode }) {
             {overdueCount} overdue debtor account(s) — {money(overdueTotal)} past due.
           </div>
         )}
-        <main className="flex-1 p-4 md:p-6">{children}</main>
+        <div className="flex-1">
+          <VerifyBanner />
+          <main className="p-4 md:p-6">{children}</main>
+        </div>
       </div>
     </div>
   );

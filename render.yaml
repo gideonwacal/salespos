@@ -79,6 +79,21 @@ services:
       # Your Vercel URL.
       - key: APP_BASE_URL
         sync: false
+      # Sending the sign-up confirmation. Without EMAIL_HOST no mail goes out
+      # and new owners cannot confirm — set these, or set
+      # REQUIRE_EMAIL_VERIFICATION to 0 to skip the check entirely.
+      - key: EMAIL_HOST
+        sync: false
+      - key: EMAIL_PORT
+        sync: false
+      - key: EMAIL_HOST_USER
+        sync: false
+      - key: EMAIL_HOST_PASSWORD
+        sync: false
+      - key: DEFAULT_FROM_EMAIL
+        sync: false
+      - key: REQUIRE_EMAIL_VERIFICATION
+        sync: false
       - key: JWT_ACCESS_MINUTES
         value: "60"
       - key: JWT_REFRESH_DAYS

@@ -4,6 +4,7 @@ from datetime import timedelta
 from decimal import Decimal
 from unittest import mock
 
+from django.core import mail
 from django.test import override_settings
 from django.urls import reverse
 from django.utils import timezone
@@ -11,6 +12,7 @@ from rest_framework.test import APITestCase
 
 from apps.accounts.models import (
     PLAN_PRICES_UGX,
+    EmailVerification,
     Membership,
     SubscriptionPayment,
     User,
@@ -694,3 +696,135 @@ class TrialLockTests(APITestCase):
         response = self.client.get("/api/products/", **self.headers)
         self.assertEqual(response.status_code, 403)
         self.assertIn("suspended", str(response.data).lower())
+
+
+@override_settings(
+    REQUIRE_EMAIL_VERIFICATION=True,
+    EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
+    EMAIL_HOST="smtp.example.com",
+    APP_BASE_URL="https://shop.example",
+)
+class EmailVerificationTests(APITestCase):
+    """A new owner confirms the address before the shop opens. Staff never do."""
+
+    def register(self, email="new@shop.com"):
+        return self.client.post(
+            "/api/auth/register/",
+            {
+                "email": email,
+                "password": "sup3rsecret!",
+                "full_name": "New Owner",
+                "business_name": "New Shop",
+            },
+            format="json",
+        )
+
+    def test_registering_sends_a_link_and_leaves_the_owner_unverified(self):
+        response = self.register()
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertFalse(response.data["user"]["email_verified"])
+        self.assertTrue(response.data["verification_sent"])
+
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn("https://shop.example/verify?token=", mail.outbox[0].body)
+
+    def test_an_unverified_owner_cannot_trade(self):
+        self.register()
+        user = User.objects.get(email="new@shop.com")
+        workspace = Membership.objects.get(user=user).workspace
+        self.client.force_authenticate(user=user)
+
+        response = self.client.get("/api/products/", HTTP_X_WORKSPACE=str(workspace.id))
+        self.assertEqual(response.status_code, 403)
+        self.assertIn("Confirm your email", str(response.data))
+
+    def test_opening_the_link_opens_the_shop(self):
+        self.register()
+        token = EmailVerification.objects.get().token
+
+        confirmed = self.client.post(
+            "/api/auth/verify-email/", {"token": token}, format="json"
+        )
+        self.assertEqual(confirmed.status_code, 200)
+        self.assertTrue(confirmed.data["verified"])
+
+        user = User.objects.get(email="new@shop.com")
+        self.assertTrue(user.email_verified)
+
+        workspace = Membership.objects.get(user=user).workspace
+        self.client.force_authenticate(user=user)
+        response = self.client.get("/api/products/", HTTP_X_WORKSPACE=str(workspace.id))
+        self.assertEqual(response.status_code, 200)
+
+    def test_a_link_only_works_once(self):
+        self.register()
+        token = EmailVerification.objects.get().token
+        self.client.post("/api/auth/verify-email/", {"token": token}, format="json")
+
+        again = self.client.post("/api/auth/verify-email/", {"token": token}, format="json")
+        self.assertEqual(again.status_code, 400)
+
+    def test_an_expired_link_is_refused(self):
+        self.register()
+        stale = EmailVerification.objects.get()
+        stale.created_at = timezone.now() - timedelta(days=8)
+        stale.save(update_fields=["created_at"])
+
+        response = self.client.post(
+            "/api/auth/verify-email/", {"token": stale.token}, format="json"
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(User.objects.get(email="new@shop.com").email_verified)
+
+    def test_an_unknown_token_says_nothing_useful(self):
+        response = self.client.post(
+            "/api/auth/verify-email/", {"token": "not-a-real-token"}, format="json"
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_sales_staff_are_never_asked_to_confirm(self):
+        """The owner vouched for that login by creating it."""
+        self.register()
+        owner = User.objects.get(email="new@shop.com")
+        owner.email_verified = True
+        owner.save(update_fields=["email_verified"])
+        workspace = Membership.objects.get(user=owner).workspace
+
+        cashier = User.objects.create_user(email="till@shop.com", password="sup3rsecret!")
+        Membership.objects.create(user=cashier, workspace=workspace, role="manager")
+        self.assertFalse(cashier.email_verified)
+
+        self.client.force_authenticate(user=cashier)
+        response = self.client.get("/api/products/", HTTP_X_WORKSPACE=str(workspace.id))
+        self.assertEqual(response.status_code, 200)
+
+    def test_resending_says_the_same_thing_for_an_address_we_do_not_have(self):
+        """Otherwise the form is a way of finding out who banks here."""
+        unknown = self.client.post(
+            "/api/auth/resend-verification/", {"email": "nobody@nowhere.com"}, format="json"
+        )
+        self.assertEqual(unknown.status_code, 200)
+        self.assertFalse(unknown.data["sent"])
+        self.assertEqual(len(mail.outbox), 0)
+
+    def test_resending_gives_a_fresh_link(self):
+        self.register()
+        mail.outbox.clear()
+
+        response = self.client.post(
+            "/api/auth/resend-verification/", {"email": "new@shop.com"}, format="json"
+        )
+        self.assertTrue(response.data["sent"])
+        self.assertEqual(EmailVerification.objects.count(), 2)
+        self.assertEqual(len(mail.outbox), 1)
+
+    @override_settings(REQUIRE_EMAIL_VERIFICATION=False)
+    def test_the_whole_check_can_be_switched_off(self):
+        """For a deployment with no mail server that does not want one."""
+        self.register()
+        user = User.objects.get(email="new@shop.com")
+        workspace = Membership.objects.get(user=user).workspace
+        self.client.force_authenticate(user=user)
+
+        response = self.client.get("/api/products/", HTTP_X_WORKSPACE=str(workspace.id))
+        self.assertEqual(response.status_code, 200)

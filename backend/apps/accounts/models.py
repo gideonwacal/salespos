@@ -53,6 +53,10 @@ class User(AbstractBaseUser, PermissionsMixin):
     phone = models.CharField(max_length=40, blank=True, default="")
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
+    # Has this person proved the address is theirs? Only asked of people who
+    # register a business themselves — a cashier is vouched for by the owner
+    # who created them, and has no email to check in the first place.
+    email_verified = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
 
     objects = UserManager()
@@ -66,6 +70,32 @@ class User(AbstractBaseUser, PermissionsMixin):
 
     def __str__(self):
         return self.email
+
+
+class EmailVerification(models.Model):
+    """A one-time link proving someone can read the address they signed up with.
+
+    Kept as rows rather than a field on the user so a lost email can simply be
+    sent again: the newest unused token wins and the older ones stay as a
+    record of how many times it took.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey("User", on_delete=models.CASCADE, related_name="verifications")
+    token = models.CharField(max_length=64, unique=True, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    used_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = "email_verifications"
+        ordering = ["-created_at"]
+
+    @property
+    def expired(self) -> bool:
+        return self.created_at + timedelta(days=7) < timezone.now()
+
+    def __str__(self):
+        return f"{self.user_id} · {'used' if self.used_at else 'open'}"
 
 
 def default_trial_ends():

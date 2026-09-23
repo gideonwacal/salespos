@@ -5,6 +5,7 @@ authenticated user has an active membership in it, so a forged header gets a 403
 rather than another tenant's data.
 """
 
+from django.conf import settings
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.viewsets import ModelViewSet
 
@@ -53,6 +54,29 @@ def ensure_workspace_open(workspace):
         )
 
 
+def ensure_email_verified(user, role):
+    """Hold an owner out until they have confirmed their address.
+
+    Owners only. A cashier never gave us an email to check — the owner created
+    that login and vouched for it by doing so — and locking the counter because
+    the office has not read its mail would stop the shop trading for a reason
+    the cashier cannot fix.
+
+    Accounts that predate this check are already marked verified, so nobody who
+    was working yesterday is shut out this morning.
+    """
+    if not settings.REQUIRE_EMAIL_VERIFICATION:
+        return
+    if role != "owner" or user is None or not user.is_authenticated:
+        return
+    if getattr(user, "email_verified", True):
+        return
+    raise PermissionDenied(
+        "Confirm your email address to finish setting up. "
+        "Check your inbox, or ask for the link again from the sign-in page."
+    )
+
+
 def ensure_workspace_paid(workspace):
     """Refuse a business that has run out of trial without subscribing.
 
@@ -86,7 +110,8 @@ class WorkspaceViewSet(ModelViewSet):
         request.workspace_role = role
         super().initial(request, *args, **kwargs)
         # Every tenant-scoped table goes through here — products, sales,
-        # expenses, debtors — so this one call is the whole lock.
+        # expenses, debtors — so these two calls are the whole lock.
+        ensure_email_verified(request.user, role)
         ensure_workspace_paid(workspace)
 
     def get_queryset(self):

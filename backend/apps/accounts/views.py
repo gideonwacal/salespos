@@ -19,7 +19,7 @@ from apps.accounts.models import (
     User,
     Workspace,
 )
-from apps.accounts import momo
+from apps.accounts import momo, verification
 from apps.accounts.serializers import (
     InviteMemberSerializer,
     MembershipSerializer,
@@ -49,6 +49,15 @@ class RegisterView(APIView):
         serializer.is_valid(raise_exception=True)
         result = serializer.save()
         user, workspace = result["user"], result["workspace"]
+
+        # Signed in straight away either way: they can see their shop, they
+        # just cannot trade in it until the address is confirmed. Being unable
+        # to send the mail is reported rather than hidden, because the person
+        # who needs to know is the one reading this response.
+        sent = False
+        if settings.REQUIRE_EMAIL_VERIFICATION:
+            _, sent = verification.issue_verification(user, business=workspace.name)
+
         return Response(
             {
                 **issue_tokens(user),
@@ -57,9 +66,12 @@ class RegisterView(APIView):
                     "email": user.email,
                     "full_name": user.full_name,
                     "phone": user.phone,
+                    "email_verified": user.email_verified,
                 },
                 "workspace": WorkspaceSerializer(workspace).data,
                 "role": "owner",
+                "verification_required": settings.REQUIRE_EMAIL_VERIFICATION,
+                "verification_sent": sent,
             },
             status=status.HTTP_201_CREATED,
         )
@@ -81,6 +93,63 @@ class LoginView(TokenObtainPairView):
             if user is not None:
                 ActivityLog.record(request, "signed in", user=user)
         return response
+
+
+class VerifyEmailView(APIView):
+    """POST /api/auth/verify-email/ — turn a link from the inbox into an open shop."""
+
+    permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "login"
+
+    def post(self, request):
+        token = str(request.data.get("token", "")).strip()
+        user = verification.consume(token) if token else None
+        if user is None:
+            # One message for unknown, used and expired alike: which of the
+            # three it was is information about an account that is not theirs.
+            return Response(
+                {"detail": "That link is not valid any more. Ask for a new one."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        ActivityLog.record(request, "confirmed their email", user=user)
+        return Response({"email": user.email, "verified": True})
+
+
+class ResendVerificationView(APIView):
+    """POST /api/auth/resend-verification/ — send the link again.
+
+    Answers the same way whether or not the address belongs to anybody, so it
+    cannot be used to find out who has an account here.
+    """
+
+    permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "login"
+
+    def post(self, request):
+        email = str(request.data.get("email", "")).strip().lower()
+        user = User.objects.filter(email=email).first() if email else None
+
+        sent = False
+        if user is not None and not user.email_verified:
+            membership = (
+                Membership.objects.filter(user=user, role="owner", active=True)
+                .select_related("workspace")
+                .first()
+            )
+            _, sent = verification.issue_verification(
+                user, business=membership.workspace.name if membership else ""
+            )
+
+        return Response(
+            {
+                "detail": "If that address needs confirming, a new link is on its way.",
+                # Only ever true for a real unverified account, and only to say
+                # the mail server accepted it — not that anyone read it.
+                "sent": sent,
+            }
+        )
 
 
 class MeView(APIView):

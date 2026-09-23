@@ -8,6 +8,8 @@ from apps.accounts.views import (
     MembershipViewSet,
     MeView,
     RegisterView,
+    ResendVerificationView,
+    VerifyEmailView,
     MobileMoneyChargeView,
     MobileMoneyStatusView,
     SubscriptionPaymentViewSet,
@@ -27,6 +29,12 @@ urlpatterns = [
     path("auth/refresh/", TokenRefreshView.as_view(), name="token-refresh"),
     path("auth/verify/", TokenVerifyView.as_view(), name="token-verify"),
     path("auth/me/", MeView.as_view(), name="me"),
+    path("auth/verify-email/", VerifyEmailView.as_view(), name="verify-email"),
+    path(
+        "auth/resend-verification/",
+        ResendVerificationView.as_view(),
+        name="resend-verification",
+    ),
     path("billing/", BillingInfoView.as_view(), name="billing"),
     path("billing/charge/", MobileMoneyChargeView.as_view(), name="billing-charge"),
     path(

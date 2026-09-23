@@ -310,6 +310,31 @@ if not APP_BASE_URL and CORS_ALLOWED_ORIGINS:
 # Both telcos take amounts in whole shillings — 50000 means fifty thousand.
 # No minor-unit arithmetic to get wrong.
 
+# Sending mail. Any SMTP host will do — a Gmail app password, Zoho, Brevo,
+# Resend, whatever the business already has. With EMAIL_HOST unset, nothing is
+# sent: in development the message is printed to the console instead, and in
+# production the verification link is written to the log so nobody is stranded
+# by a mail server that was never configured.
+EMAIL_HOST = os.environ.get("EMAIL_HOST", "").strip()
+EMAIL_PORT = int(os.environ.get("EMAIL_PORT", "587"))
+EMAIL_HOST_USER = os.environ.get("EMAIL_HOST_USER", "").strip()
+EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD", "")
+EMAIL_USE_TLS = os.environ.get("EMAIL_USE_TLS", "1") != "0"
+EMAIL_USE_SSL = os.environ.get("EMAIL_USE_SSL", "0") == "1"
+DEFAULT_FROM_EMAIL = os.environ.get(
+    "DEFAULT_FROM_EMAIL", EMAIL_HOST_USER or "SalesPos <no-reply@salespos.app>"
+).strip()
+
+if EMAIL_HOST:
+    EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
+else:
+    EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
+
+# Whether a new owner must confirm their address before the shop opens. Off
+# switches the whole check, for a deployment that has no mail server and does
+# not want one.
+REQUIRE_EMAIL_VERIFICATION = os.environ.get("REQUIRE_EMAIL_VERIFICATION", "1") != "0"
+
 # Rate limits on the billing endpoints: enough for a real shop, too few to
 # scrape the payment number or flood the admin with made-up transaction IDs.
 REST_FRAMEWORK["DEFAULT_THROTTLE_RATES"] = {

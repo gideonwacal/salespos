@@ -997,7 +997,14 @@ export function activateSubscription(plan: PlanId, months = 1) {
 /* local auth                                                          */
 /* ------------------------------------------------------------------ */
 
-export type SessionUser = { id: string; email: string; full_name: string; role: AppRole };
+export type SessionUser = {
+  id: string;
+  email: string;
+  full_name: string;
+  role: AppRole;
+  /** Owners only, and only on a live session. Absent means nothing to confirm. */
+  email_verified?: boolean;
+};
 
 export function getSessionUser(): SessionUser | null {
   if (typeof window === "undefined") return null;

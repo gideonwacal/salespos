@@ -21,6 +21,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { INDUSTRY_GROUPS, resolveIndustry } from "@/lib/industry";
+import { PasswordInput } from "@/components/PasswordInput";
 import heroImage from "@/assets/market-hero.jpg";
 
 export const Route = createFileRoute("/auth")({
@@ -165,9 +166,8 @@ function AuthPage() {
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="si-pass">Password</Label>
-                  <Input
+                  <PasswordInput
                     id="si-pass"
-                    type="password"
                     value={signIn.password}
                     onChange={(e) => setSignIn({ ...signIn, password: e.target.value })}
                     onKeyDown={(e) => e.key === "Enter" && doSignIn()}
@@ -243,9 +243,8 @@ function AuthPage() {
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="su-pass">Password</Label>
-                  <Input
+                  <PasswordInput
                     id="su-pass"
-                    type="password"
                     value={signUp.password}
                     onChange={(e) => setSignUp({ ...signUp, password: e.target.value })}
                   />

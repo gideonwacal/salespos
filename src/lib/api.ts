@@ -146,11 +146,31 @@ export async function request<T>(
 /* auth                                                                */
 /* ------------------------------------------------------------------ */
 
+/** Confirm an address from the link in the inbox. */
+export function verifyEmail(token: string) {
+  return request<{ email: string; verified: boolean }>("/auth/verify-email/", {
+    method: "POST",
+    auth: false,
+    body: JSON.stringify({ token }),
+  });
+}
+
+/** Ask for the link again. Answers the same way whether the address exists or not. */
+export function resendVerification(email: string) {
+  return request<{ detail: string; sent: boolean }>("/auth/resend-verification/", {
+    method: "POST",
+    auth: false,
+    body: JSON.stringify({ email }),
+  });
+}
+
 export type ApiUser = {
   id: string;
   email: string;
   full_name: string;
   phone?: string;
+  /** Owners only; a cashier has nothing to confirm. Absent on older servers. */
+  email_verified?: boolean;
 };
 
 export type ApiWorkspace = Record<string, unknown> & { id: string; name: string };
