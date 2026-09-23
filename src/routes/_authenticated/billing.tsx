@@ -19,6 +19,7 @@ import { businessFrom } from "@/lib/auth";
 import { isServerTable } from "@/lib/db";
 import { PaymentDialog } from "@/components/PaymentDialog";
 import { HowToPay } from "@/components/HowToPay";
+import { PaymentWalkthrough } from "@/components/PaymentWalkthrough";
 import { useAuth } from "@/hooks/useAuth";
 import { useBusiness } from "@/hooks/useBusiness";
 import { useStaff, useCustomers, useDebts, useQuotations } from "@/lib/data";
@@ -215,6 +216,17 @@ function Billing() {
           without opening a payment first. */}
       {!status.free && !status.suspended && (
         <HowToPay info={billingInfo} loading={billingLoading} isOwner={isOwner} />
+      )}
+
+      {/* Shown to a shop that has not paid before — during the demo, on the
+          trial, and after it runs out. A business that has been paying for
+          months does not need to watch it again. */}
+      {!status.free && !status.suspended && (isDemo() || !status.subscribed) && (
+        <PaymentWalkthrough
+          plan={advice.recommended}
+          number={billingInfo?.number ?? "0760 417 357"}
+          holder={billingInfo?.name}
+        />
       )}
 
       <Card
