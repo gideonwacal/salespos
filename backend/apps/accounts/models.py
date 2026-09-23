@@ -188,7 +188,8 @@ class SubscriptionPayment(models.Model):
     NETWORK_CHOICES = [
         ("mtn_momo", "MTN Mobile Money"),
         ("airtel_money", "Airtel Money"),
-        ("bank_card", "Card or bank transfer"),
+        ("bank_card", "Bank transfer"),
+        ("card_stripe", "Card (Stripe)"),
     ]
 
     # Which rail the money came down, so whoever confirms it knows which

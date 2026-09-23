@@ -57,6 +57,18 @@ services:
         sync: false
       - key: SUBSCRIPTION_BANK_BRANCH
         sync: false
+      # Stripe card payments. The secret key makes the card option appear; the
+      # webhook secret is what turns a paid card into an active plan. Set the
+      # webhook in the Stripe dashboard to:
+      #   https://<this-service>.onrender.com/api/billing/stripe-webhook/
+      # listening for checkout.session.completed.
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+      # Your Vercel URL, so Stripe returns the shop to the billing page.
+      - key: APP_BASE_URL
+        sync: false
       - key: JWT_ACCESS_MINUTES
         value: "60"
       - key: JWT_REFRESH_DAYS

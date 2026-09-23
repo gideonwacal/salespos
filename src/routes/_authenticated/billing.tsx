@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Check, Lightbulb, Minus, Smartphone } from "lucide-react";
@@ -108,6 +108,30 @@ function Billing() {
     },
   });
   const pending = payments.filter((p) => p.status === "pending");
+
+  // Stripe sends the shop back here with ?checkout=success. The plan is turned
+  // on by the webhook, not by this redirect, so all this does is say so and ask
+  // the server again — then clear the parameter so a refresh does not repeat it.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const result = params.get("checkout");
+    if (!result) return;
+
+    if (result === "success") {
+      toast.success("Card payment received — your plan is being turned on.");
+      queryClient.invalidateQueries({ queryKey: ["subscription-payments"] });
+    } else if (result === "cancelled") {
+      toast.info("Card payment cancelled. Nothing was charged.");
+    }
+    params.delete("checkout");
+    const query = params.toString();
+    window.history.replaceState(
+      {},
+      "",
+      `${window.location.pathname}${query ? `?${query}` : ""}`,
+    );
+  }, [queryClient]);
 
   const pay = (id: PlanId) => {
     // The demo is a sales pitch with no server behind it, so it still

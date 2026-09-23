@@ -435,6 +435,20 @@ export function fetchBillingInfo() {
   return request<BillingInfo>("/billing/");
 }
 
+/**
+ * Start a card payment.
+ *
+ * Returns the Stripe Checkout URL to send the browser to; the plan is turned on
+ * by Stripe's webhook, not by anything the browser reports back, so closing the
+ * tab after paying still leaves the shop paid.
+ */
+export function startCardCheckout(input: { plan: string; months: number }) {
+  return request<{ url: string; id: string }>("/billing/checkout/", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
 export async function listSubscriptionPayments() {
   const data = await request<Paginated<SubscriptionPayment> | SubscriptionPayment[]>(
     "/subscription-payments/",

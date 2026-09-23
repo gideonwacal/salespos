@@ -377,3 +377,124 @@ class NoPaymentChannelTests(APITestCase):
             format="json",
         )
         self.assertEqual(submitted.status_code, 403)
+
+
+@override_settings(STRIPE_SECRET_KEY="sk_test_x", STRIPE_WEBHOOK_SECRET="whsec_x")
+class StripeCheckoutTests(APITestCase):
+    """Card payments: priced here, charged by Stripe, activated by the webhook."""
+
+    def setUp(self):
+        self.owner = User.objects.create_user(email="owner@shop.com", password="sup3rsecret!")
+        self.manager = User.objects.create_user(email="mgr@shop.com", password="sup3rsecret!")
+        self.workspace = Workspace.objects.create(name="Shop")
+        Membership.objects.create(user=self.owner, workspace=self.workspace, role="owner")
+        Membership.objects.create(user=self.manager, workspace=self.workspace, role="manager")
+
+    def test_card_appears_as_a_channel_once_a_key_is_set(self):
+        self.client.force_authenticate(user=self.owner)
+        response = self.client.get("/api/billing/")
+        ids = {c["id"] for c in response.data["channels"]}
+        self.assertIn("card_stripe", ids)
+
+    @override_settings(STRIPE_SECRET_KEY="")
+    def test_no_card_channel_without_a_key(self):
+        self.client.force_authenticate(user=self.owner)
+        response = self.client.get("/api/billing/")
+        ids = {c["id"] for c in response.data["channels"]}
+        self.assertNotIn("card_stripe", ids)
+
+    def test_a_manager_cannot_start_a_card_payment(self):
+        self.client.force_authenticate(user=self.manager)
+        response = self.client.post(
+            "/api/billing/checkout/", {"plan": "growth", "months": 1}, format="json"
+        )
+        self.assertEqual(response.status_code, 403)
+
+    def test_the_plan_and_months_are_checked_before_stripe_is_called(self):
+        self.client.force_authenticate(user=self.owner)
+        for body in ({"plan": "platinum", "months": 1}, {"plan": "growth", "months": 7}):
+            response = self.client.post("/api/billing/checkout/", body, format="json")
+            self.assertEqual(response.status_code, 400, body)
+        self.assertFalse(SubscriptionPayment.objects.exists())
+
+    def test_a_card_payment_cannot_be_reported_by_hand(self):
+        """Otherwise anyone could claim a card payment and be believed."""
+        self.client.force_authenticate(user=self.owner)
+        response = self.client.post(
+            "/api/subscription-payments/",
+            {
+                "plan": "growth",
+                "months": 1,
+                "payer_phone": "0771 234 567",
+                "transaction_id": "CARD123456",
+                "network": "card_stripe",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(SubscriptionPayment.objects.exists())
+
+
+class StripeWebhookTests(APITestCase):
+    """The signature is the only thing between a stranger and a free plan."""
+
+    def setUp(self):
+        self.workspace = Workspace.objects.create(name="Shop")
+        self.payment = SubscriptionPayment.objects.create(
+            workspace=self.workspace,
+            plan="growth",
+            months=1,
+            amount=PLAN_PRICES_UGX["growth"],
+            network="card_stripe",
+            payer_phone="card",
+            transaction_id="cs_test_123",
+        )
+
+    @override_settings(STRIPE_WEBHOOK_SECRET="whsec_x")
+    def test_an_unsigned_event_is_refused(self):
+        response = self.client.post(
+            "/api/billing/stripe-webhook/",
+            data='{"type": "checkout.session.completed"}',
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 400)
+
+        self.payment.refresh_from_db()
+        self.workspace.refresh_from_db()
+        self.assertEqual(self.payment.status, "pending")
+        self.assertFalse(self.workspace.subscribed)
+
+    @override_settings(STRIPE_WEBHOOK_SECRET="")
+    def test_a_deployment_with_no_webhook_secret_accepts_nothing(self):
+        response = self.client.post(
+            "/api/billing/stripe-webhook/",
+            data='{"type": "checkout.session.completed"}',
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.workspace.refresh_from_db()
+        self.assertFalse(self.workspace.subscribed)
+
+    def test_approving_the_payment_activates_the_plan(self):
+        """What the webhook does once the signature checks out."""
+        self.payment.approve()
+        self.workspace.refresh_from_db()
+        self.assertTrue(self.workspace.subscribed)
+        self.assertEqual(self.workspace.plan, "growth")
+
+        # Stripe retries until it gets a 2xx, so approving twice must not
+        # hand out two months for one payment.
+        first_until = self.workspace.paid_until
+        self.payment.approve()
+        self.workspace.refresh_from_db()
+        self.assertEqual(self.workspace.paid_until, first_until)
+
+
+class StripeAmountTests(APITestCase):
+    def test_shillings_are_sent_whole(self):
+        """UGX is zero-decimal at Stripe; multiplying by 100 would overcharge."""
+        from apps.accounts.views import stripe_amount
+
+        self.assertEqual(stripe_amount(50_000, "UGX"), 50_000)
+        self.assertEqual(stripe_amount(50_000, "ugx"), 50_000)
+        self.assertEqual(stripe_amount(50, "USD"), 5_000)

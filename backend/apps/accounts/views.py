@@ -12,6 +12,7 @@ from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework_simplejwt.views import TokenObtainPairView
 
 from apps.accounts.models import (
+    MONTHS_CHOICES,
     PLAN_PRICES_UGX,
     Membership,
     SubscriptionPayment,
@@ -251,6 +252,27 @@ def payment_channels() -> list:
             }
         )
 
+    if settings.STRIPE_SECRET_KEY:
+        channels.append(
+            {
+                "id": "card_stripe",
+                "kind": "card",
+                "label": "Card",
+                # Filled in by Stripe's own page, so there is nothing to copy
+                # and nothing to type back afterwards.
+                "account": "",
+                "account_label": "Visa, Mastercard and mobile wallets",
+                "holder": "",
+                "instructions": (
+                    "You will be taken to Stripe's secure page to enter the card. "
+                    "Your plan activates the moment the payment goes through."
+                ),
+                "reference_label": "",
+                "reference_hint": "",
+                "note": "",
+            }
+        )
+
     if settings.SUBSCRIPTION_BANK_ACCOUNT_NUMBER:
         where = " · ".join(
             part
@@ -264,7 +286,7 @@ def payment_channels() -> list:
             {
                 "id": "bank_card",
                 "kind": "bank",
-                "label": "Card or bank transfer",
+                "label": "Bank transfer",
                 "account": settings.SUBSCRIPTION_BANK_ACCOUNT_NUMBER,
                 "account_label": "Account number",
                 "holder": settings.SUBSCRIPTION_BANK_ACCOUNT_NAME,
@@ -274,10 +296,8 @@ def payment_channels() -> list:
                     else "Transfer from your bank or card app."
                 ),
                 "reference_label": "Reference or receipt number",
-                "reference_hint": "From your bank or card confirmation",
-                # Said plainly rather than implied: there is no card gateway
-                # here, and a shop that expects one would wait for nothing.
-                "note": "Your card is not charged inside SalesPos — you move the money yourself.",
+                "reference_hint": "From your bank confirmation",
+                "note": "A transfer can take a day to clear before your plan turns on.",
             }
         )
 
@@ -315,6 +335,179 @@ class BillingInfoView(APIView):
         return response
 
 
+def stripe_amount(total: int, currency: str = "UGX") -> int:
+    """What Stripe wants in `unit_amount` for this total.
+
+    Shillings have no minor unit and Stripe agrees — UGX is one of its
+    zero-decimal currencies — so the amount goes as whole shillings. Sending it
+    times a hundred, as one does for dollars, would charge a shop a hundredfold.
+    """
+    if currency.upper() in settings.STRIPE_ZERO_DECIMAL_CURRENCIES:
+        return int(total)
+    return int(total) * 100
+
+
+class StripeCheckoutView(APIView):
+    """POST /api/billing/checkout/ — start a card payment for a plan.
+
+    Stripe hosts the card form: we create a Checkout Session and hand back its
+    URL, so no card number ever reaches this server or the browser bundle.
+
+    A pending SubscriptionPayment is written before the shop leaves, keyed by
+    the session id. That row is what the webhook approves, and it is also why a
+    shop that pays and then closes the tab still gets its plan — the money is
+    already tied to a record here.
+    """
+
+    permission_classes = [IsAuthenticated]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "payment_submit"
+
+    def post(self, request):
+        workspace, role = resolve_workspace(request)
+        request.workspace = workspace
+        request.workspace_role = role
+        # Who they are first, then whether the business may transact: a user
+        # with no workspace at all must not reach the suspension check.
+        if workspace is None or role != "owner":
+            self.permission_denied(request, message="Only the workspace owner can pay.")
+        ensure_workspace_open(workspace)
+        if not settings.STRIPE_SECRET_KEY:
+            self.permission_denied(request, message="Card payments are not set up yet.")
+
+        plan = str(request.data.get("plan", "")).strip()
+        if plan not in PLAN_PRICES_UGX:
+            raise ValidationError({"plan": "Choose one of the published plans."})
+        try:
+            months = int(request.data.get("months", 1))
+        except (TypeError, ValueError):
+            raise ValidationError({"months": "Choose how many months."})
+        if months not in dict(MONTHS_CHOICES):
+            raise ValidationError({"months": "Choose how many months."})
+
+        # Priced here, never by the browser.
+        total = PLAN_PRICES_UGX[plan] * months
+        currency = "UGX"
+
+        import stripe
+
+        stripe.api_key = settings.STRIPE_SECRET_KEY
+        base = settings.APP_BASE_URL or ""
+
+        try:
+            session = stripe.checkout.Session.create(
+                mode="payment",
+                success_url=f"{base}/billing?checkout=success",
+                cancel_url=f"{base}/billing?checkout=cancelled",
+                client_reference_id=str(workspace.id),
+                customer_email=request.user.email or None,
+                line_items=[
+                    {
+                        "quantity": 1,
+                        "price_data": {
+                            "currency": currency.lower(),
+                            "unit_amount": stripe_amount(total, currency),
+                            "product_data": {
+                                "name": f"SalesPos {plan.title()} plan",
+                                "description": f"{months} month{'s' if months != 1 else ''} for {workspace.name}",
+                            },
+                        },
+                    }
+                ],
+                metadata={
+                    "workspace_id": str(workspace.id),
+                    "plan": plan,
+                    "months": str(months),
+                },
+            )
+        except Exception as error:  # noqa: BLE001 — Stripe raises a family of these
+            # Whatever Stripe objected to, the shop cannot act on the traceback.
+            return Response(
+                {"detail": f"Could not start the card payment: {error}"},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+
+        SubscriptionPayment.objects.create(
+            workspace=workspace,
+            submitted_by=request.user,
+            plan=plan,
+            months=months,
+            amount=total,
+            currency=currency,
+            network="card_stripe",
+            payer_phone=request.user.phone or workspace.phone or "card",
+            transaction_id=session.id,
+            status="pending",
+        )
+
+        return Response({"url": session.url, "id": session.id})
+
+
+class StripeWebhookView(APIView):
+    """POST /api/billing/stripe-webhook/ — Stripe telling us the money landed.
+
+    Open to the world by necessity, so the signature is the only thing standing
+    between a stranger and a free Enterprise plan. Unsigned, wrongly signed, or
+    sent to a deployment with no webhook secret: all refused.
+    """
+
+    permission_classes = [AllowAny]
+    authentication_classes: list = []
+
+    def post(self, request):
+        secret = settings.STRIPE_WEBHOOK_SECRET
+        if not secret:
+            return Response({"detail": "Webhook not configured."}, status=400)
+
+        import stripe
+
+        try:
+            event = stripe.Webhook.construct_event(
+                payload=request.body,
+                sig_header=request.META.get("HTTP_STRIPE_SIGNATURE", ""),
+                secret=secret,
+            )
+        except Exception:  # noqa: BLE001 — bad signature or unparseable body
+            return Response({"detail": "Invalid signature."}, status=400)
+
+        if event["type"] == "checkout.session.completed":
+            session = event["data"]["object"]
+            # Only a paid session counts: a completed session can still be
+            # awaiting an asynchronous method.
+            if session.get("payment_status") == "paid":
+                self._approve(session.get("id"))
+
+        elif event["type"] == "checkout.session.async_payment_succeeded":
+            self._approve(event["data"]["object"].get("id"))
+
+        elif event["type"] in (
+            "checkout.session.expired",
+            "checkout.session.async_payment_failed",
+        ):
+            payment = SubscriptionPayment.objects.filter(
+                transaction_id=event["data"]["object"].get("id"), status="pending"
+            ).first()
+            if payment is not None:
+                payment.status = "rejected"
+                payment.note = "Card payment not completed"
+                payment.save(update_fields=["status", "note"])
+
+        # Anything else is noise we did not subscribe to; 200 stops Stripe retrying.
+        return Response({"received": True})
+
+    def _approve(self, session_id):
+        """Activate the plan this session paid for, once.
+
+        approve() is a no-op on an already-approved payment, which is what
+        makes a repeated webhook — Stripe retries until it gets a 2xx — safe.
+        """
+        if not session_id:
+            return
+        payment = SubscriptionPayment.objects.filter(transaction_id=session_id).first()
+        if payment is not None:
+            payment.approve()
+
+
 class SubscriptionPaymentViewSet(viewsets.ModelViewSet):
     """The owner reports a mobile money payment; approval happens in the admin."""
 
@@ -349,6 +542,12 @@ class SubscriptionPaymentViewSet(viewsets.ModelViewSet):
         chosen = serializer.validated_data.get("network") or "mtn_momo"
         if chosen not in channels:
             raise ValidationError({"network": "That payment method is not available."})
+        # A card payment is confirmed by Stripe's webhook, never by someone
+        # typing a reference in: accepting one here would be accepting a claim.
+        if chosen == "card_stripe":
+            raise ValidationError(
+                {"network": "Card payments are completed on the card page, not reported here."}
+            )
         serializer.save(
             workspace=self.request.workspace,
             submitted_by=self.request.user,

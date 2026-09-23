@@ -21,10 +21,16 @@ import {
   Copy,
   CreditCard,
   Info,
+  Landmark,
   Smartphone,
 } from "lucide-react";
 import { planById, type PlanId } from "@/lib/demo";
-import { submitSubscriptionPayment, type BillingInfo, type PaymentChannel } from "@/lib/api";
+import {
+  startCardCheckout,
+  submitSubscriptionPayment,
+  type BillingInfo,
+  type PaymentChannel,
+} from "@/lib/api";
 import { moneyIn } from "@/lib/format";
 import {
   Dialog,
@@ -49,8 +55,8 @@ const MONTH_NOTE: Record<number, string> = {
 };
 
 function channelIcon(channel: PaymentChannel) {
-  if (channel.kind === "bank") return CreditCard;
-  if (channel.id === "airtel_money") return Smartphone;
+  if (channel.kind === "card") return CreditCard;
+  if (channel.kind === "bank") return Landmark;
   return Smartphone;
 }
 
@@ -110,6 +116,24 @@ export function PaymentDialog({
       toast.success(`${what} copied`);
     } catch {
       /* clipboard blocked — it is on screen anyway */
+    }
+  };
+
+  /**
+   * Hand the shop over to Stripe.
+   *
+   * Nothing is reported back here afterwards: the plan turns on when Stripe's
+   * webhook says the money landed, so a shop that pays and closes the tab is
+   * still paid.
+   */
+  const goToCard = async () => {
+    setBusy(true);
+    try {
+      const { url } = await startCardCheckout({ plan, months });
+      window.location.href = url;
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not open the card page.");
+      setBusy(false);
     }
   };
 
@@ -235,7 +259,7 @@ export function PaymentDialog({
                     <span className="min-w-0 flex-1">
                       <span className="block text-sm font-semibold">{c.label}</span>
                       <span className="block truncate text-[11px] text-muted-foreground">
-                        {c.account_label} {c.account}
+                        {c.account ? `${c.account_label} ${c.account}` : c.account_label}
                       </span>
                     </span>
                     {picked && <Check className="size-4 shrink-0 text-primary" />}
@@ -326,11 +350,16 @@ export function PaymentDialog({
             <Button variant="outline" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            {step === "choose" && (
-              <Button disabled={!channel} onClick={() => setStep("send")}>
-                Continue
-              </Button>
-            )}
+            {step === "choose" &&
+              (channel?.kind === "card" ? (
+                <Button disabled={busy} onClick={goToCard}>
+                  {busy ? "Opening card page…" : "Pay by card"}
+                </Button>
+              ) : (
+                <Button disabled={!channel} onClick={() => setStep("send")}>
+                  Continue
+                </Button>
+              ))}
             {step === "send" && <Button onClick={() => setStep("confirm")}>I have sent it</Button>}
             {step === "confirm" && (
               <Button onClick={submit} disabled={busy}>

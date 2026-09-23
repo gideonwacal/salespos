@@ -24,7 +24,10 @@ export function HowToPay({
 }) {
   if (!isOwner) return null;
 
-  const channels = info?.channels ?? [];
+  // A card is not a destination: there is nothing to send to and nothing to
+  // copy, so it belongs in the pay flow rather than in this list.
+  const channels = (info?.channels ?? []).filter((c) => c.kind !== "card");
+  const takesCards = (info?.channels ?? []).some((c) => c.kind === "card");
 
   const copy = async (value: string, what: string) => {
     try {
@@ -42,13 +45,19 @@ export function HowToPay({
           <Wallet className="size-4 text-brand" /> Where to send the money
         </CardTitle>
         <p className="text-xs text-muted-foreground">
-          Pick a package below to pay step by step, or send it directly to any of these and confirm
-          afterwards.
+          {takesCards
+            ? "Pick a package below to pay by card, or send mobile money to one of these and confirm afterwards."
+            : "Pick a package below to pay step by step, or send it directly to any of these and confirm afterwards."}
         </p>
       </CardHeader>
       <CardContent className="space-y-3">
         {loading && channels.length === 0 ? (
           <p className="text-sm text-muted-foreground">Loading payment details…</p>
+        ) : channels.length === 0 && takesCards ? (
+          <p className="text-sm text-muted-foreground">
+            Card is the only way to pay on this SalesPos. Pick a package below and pay on
+            Stripe&apos;s secure page — there is nothing to send by hand.
+          </p>
         ) : channels.length === 0 ? (
           <div className="space-y-1 rounded-lg border border-warning/50 bg-warning-soft/40 p-3 text-sm">
             <p className="font-semibold">No payment details are set up yet.</p>
