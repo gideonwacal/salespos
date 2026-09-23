@@ -1,18 +1,17 @@
 /**
- * Paying for a subscription, the way an app is expected to ask.
+ * Paying for a subscription, the way it is actually done here.
  *
- * Three steps rather than one long form: choose how long and how to pay, read
- * where the money goes, then say it is sent. The middle step exists because the
- * old dialog buried the number in a form — an owner looking for "where do I
- * deposit?" had to open a payment they had not decided to make yet, and if the
- * server had no number configured, the answer was a shrug.
+ * Where the network can be charged directly, there is no page to visit and
+ * nothing to type back: the shop gives a number, the telco puts a PIN prompt
+ * on that handset, and the plan turns on the moment it is approved. Where it
+ * cannot — a bank transfer, or a network whose API is not configured — the
+ * older path remains: send the money, then report the reference.
  *
- * There is no card gateway behind SalesPos. A card pays the same way a bank
- * transfer does, and the dialog says so rather than implying a checkout that
- * does not exist.
+ * Three steps either way, so the shape of the thing does not change under
+ * someone who has learnt it: choose, send, confirm.
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   ArrowLeft,
@@ -22,11 +21,13 @@ import {
   CreditCard,
   Info,
   Landmark,
+  Loader2,
   Smartphone,
 } from "lucide-react";
 import { planById, type PlanId } from "@/lib/demo";
 import {
-  startCardCheckout,
+  checkMobileMoneyCharge,
+  startMobileMoneyCharge,
   submitSubscriptionPayment,
   type BillingInfo,
   type PaymentChannel,
@@ -54,9 +55,15 @@ const MONTH_NOTE: Record<number, string> = {
   12: "a full year",
 };
 
+/** How often to ask the telco, and for how long before we stop watching. */
+const POLL_MS = 4000;
+const POLL_LIMIT_MS = 3 * 60 * 1000;
+
+const digitsIn = (value: string) => value.replace(/\D/g, "").length;
+
 function channelIcon(channel: PaymentChannel) {
-  if (channel.kind === "card") return CreditCard;
   if (channel.kind === "bank") return Landmark;
+  if (channel.kind === "card") return CreditCard;
   return Smartphone;
 }
 
@@ -82,12 +89,17 @@ export function PaymentDialog({
   const [phone, setPhone] = useState(defaultPhone);
   const [reference, setReference] = useState("");
   const [busy, setBusy] = useState(false);
+  /** The charge we are watching, once a prompt has been sent to a phone. */
+  const [waiting, setWaiting] = useState<string | null>(null);
+  const [gaveUp, setGaveUp] = useState(false);
 
   const channels = useMemo(() => info?.channels ?? [], [info]);
+  const onSubmittedRef = useRef(onSubmitted);
+  onSubmittedRef.current = onSubmitted;
 
   // Reset when a different plan is opened — and only then. Keying this on the
-  // channel list as well would wipe a half-typed transaction ID the moment the
-  // billing details were refetched underneath the dialog.
+  // channel list as well would wipe a half-typed number the moment the billing
+  // details were refetched underneath the dialog.
   useEffect(() => {
     if (!plan) return;
     setStep("choose");
@@ -95,6 +107,8 @@ export function PaymentDialog({
     setPhone(defaultPhone);
     setReference("");
     setChannelId(null);
+    setWaiting(null);
+    setGaveUp(false);
   }, [plan, defaultPhone]);
 
   // One way to pay is not a choice; pre-select it, and the owner still sees
@@ -103,12 +117,66 @@ export function PaymentDialog({
     if (channels.length === 1) setChannelId((current) => current ?? channels[0].id);
   }, [channels]);
 
+  /**
+   * Watch a prompt that is sitting on somebody's phone.
+   *
+   * Stops on an answer, and stops asking after a few minutes — but giving up
+   * watching is not the same as failing. The server keeps the record, so a PIN
+   * entered late still lands; the shop just sees it on the payment list rather
+   * than in this dialog.
+   */
+  useEffect(() => {
+    if (!waiting) return;
+    let live = true;
+    const startedAt = Date.now();
+
+    const tick = async () => {
+      if (!live) return;
+      try {
+        const { status, reason } = await checkMobileMoneyCharge(waiting);
+        if (!live) return;
+
+        if (status === "successful") {
+          setWaiting(null);
+          toast.success("Payment received — your plan is active.");
+          onSubmittedRef.current();
+          onOpenChange(false);
+          return;
+        }
+        if (status === "failed") {
+          setWaiting(null);
+          toast.error(reason || "That payment was not completed.");
+          setStep("send");
+          return;
+        }
+      } catch {
+        /* a blip between here and the telco; keep watching */
+      }
+
+      if (!live) return;
+      if (Date.now() - startedAt > POLL_LIMIT_MS) {
+        setWaiting(null);
+        setGaveUp(true);
+        return;
+      }
+      timer = window.setTimeout(tick, POLL_MS);
+    };
+
+    let timer = window.setTimeout(tick, POLL_MS);
+    return () => {
+      live = false;
+      window.clearTimeout(timer);
+    };
+  }, [waiting, onOpenChange]);
+
   if (!plan) return null;
 
   const chosen = planById(plan);
   const monthly = info?.prices[plan] ?? chosen.price_ugx;
   const total = monthly * months;
   const channel = channels.find((c) => c.id === channelId) ?? null;
+  /** True when the telco can be asked to charge this number directly. */
+  const collects = channel?.kind === "collect";
 
   const copy = async (value: string, what: string) => {
     try {
@@ -119,23 +187,32 @@ export function PaymentDialog({
     }
   };
 
-  /**
-   * Hand the shop over to Flutterwave.
-   *
-   * Nothing is reported back from here: the plan turns on when the gateway says
-   * the money landed, so a shop that pays and closes the tab is still paid.
-   */
-  const goToCard = async () => {
+  /** Ask the telco to prompt this phone, then watch for the PIN. */
+  const charge = async () => {
+    if (!channel) return;
+    if (digitsIn(phone) < 9) {
+      toast.error("Enter the phone number to charge.");
+      return;
+    }
     setBusy(true);
+    setGaveUp(false);
     try {
-      const { url } = await startCardCheckout({ plan, months });
-      window.location.href = url;
+      const started = await startMobileMoneyCharge({
+        plan,
+        months,
+        network: channel.id,
+        phone: phone.trim(),
+      });
+      setWaiting(started.reference);
+      setStep("confirm");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not open the payment page.");
+      toast.error(error instanceof Error ? error.message : "Could not reach the network.");
+    } finally {
       setBusy(false);
     }
   };
 
+  /** The older path: money already sent by hand, reference reported here. */
   const submit = async () => {
     if (!channel) return;
     if (!phone.trim() || !reference.trim()) {
@@ -166,7 +243,7 @@ export function PaymentDialog({
       <DialogContent className="max-h-[92vh] max-w-lg overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            {step !== "choose" && (
+            {step !== "choose" && !waiting && (
               <Button
                 type="button"
                 size="icon"
@@ -181,10 +258,14 @@ export function PaymentDialog({
           </DialogTitle>
           <DialogDescription>
             {step === "choose"
-              ? "Choose how long, and how you want to pay."
+              ? "Choose how long, and how to pay."
               : step === "send"
-                ? "Send the money, then come back and confirm."
-                : "Tell us about the payment so we can match it."}
+                ? collects
+                  ? "Which phone should we charge?"
+                  : "Send the money, then come back and confirm."
+                : collects
+                  ? "Approve the request on your phone."
+                  : "Tell us about the payment so we can match it."}
           </DialogDescription>
         </DialogHeader>
 
@@ -267,6 +348,25 @@ export function PaymentDialog({
               })}
             </div>
           </div>
+        ) : step === "send" && channel && collects ? (
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <Label>Phone to charge</Label>
+              <Input
+                inputMode="tel"
+                placeholder="07XX XXX XXX"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                Must be the {channel.label} line you will approve on, with enough on it for{" "}
+                {moneyIn(total, "UGX")}.
+              </p>
+            </div>
+            <p className="rounded-lg border bg-muted/40 p-3 text-sm text-muted-foreground">
+              {channel.instructions}
+            </p>
+          </div>
         ) : step === "send" && channel ? (
           <div className="space-y-4">
             <div className="rounded-lg border bg-muted/40 p-4">
@@ -317,6 +417,14 @@ export function PaymentDialog({
               </p>
             )}
           </div>
+        ) : channel && collects ? (
+          <Waiting
+            phone={phone}
+            amount={moneyIn(total, "UGX")}
+            network={channel.label}
+            watching={!!waiting}
+            gaveUp={gaveUp}
+          />
         ) : channel ? (
           <div className="space-y-3">
             <div className="space-y-1.5">
@@ -347,28 +455,79 @@ export function PaymentDialog({
         {channels.length > 0 && (
           <DialogFooter>
             <Button variant="outline" onClick={() => onOpenChange(false)}>
-              Cancel
+              {waiting ? "Close and keep waiting" : "Cancel"}
             </Button>
-            {step === "choose" &&
-              (channel?.kind === "card" ? (
-                <Button disabled={busy} onClick={goToCard}>
-                  {busy ? "Opening payment page…" : "Pay now"}
-                </Button>
-              ) : (
-                <Button disabled={!channel} onClick={() => setStep("send")}>
-                  Continue
-                </Button>
-              ))}
-            {step === "send" && <Button onClick={() => setStep("confirm")}>I have sent it</Button>}
-            {step === "confirm" && (
-              <Button onClick={submit} disabled={busy}>
-                {busy ? "Submitting…" : "Submit payment"}
+            {step === "choose" && (
+              <Button disabled={!channel} onClick={() => setStep("send")}>
+                Continue
               </Button>
             )}
+            {step === "send" &&
+              (collects ? (
+                <Button disabled={busy} onClick={charge}>
+                  {busy ? "Sending request…" : "Send request to my phone"}
+                </Button>
+              ) : (
+                <Button onClick={() => setStep("confirm")}>I have sent it</Button>
+              ))}
+            {step === "confirm" &&
+              (collects ? (
+                gaveUp ? (
+                  <Button onClick={charge} disabled={busy}>
+                    Try again
+                  </Button>
+                ) : null
+              ) : (
+                <Button onClick={submit} disabled={busy}>
+                  {busy ? "Submitting…" : "Submit payment"}
+                </Button>
+              ))}
           </DialogFooter>
         )}
       </DialogContent>
     </Dialog>
+  );
+}
+
+/** The screen while a PIN prompt is sitting on somebody's handset. */
+function Waiting({
+  phone,
+  amount,
+  network,
+  watching,
+  gaveUp,
+}: {
+  phone: string;
+  amount: string;
+  network: string;
+  watching: boolean;
+  gaveUp: boolean;
+}) {
+  if (gaveUp) {
+    return (
+      <div className="space-y-2 rounded-lg border border-warning/50 bg-warning-soft/40 p-4 text-sm">
+        <p className="font-semibold">Still nothing from {network}.</p>
+        <p className="text-muted-foreground">
+          The request may have timed out on the phone. If you did approve it, leave this — the
+          payment still lands and your plan turns on by itself. Otherwise try again.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3 rounded-lg border bg-muted/40 p-4 text-center">
+      <Loader2 className={cn("mx-auto size-6 text-primary", watching && "animate-spin")} />
+      <p className="text-sm font-semibold">Check your phone</p>
+      <p className="text-sm text-muted-foreground">
+        {network} has sent a request for <span className="font-semibold">{amount}</span> to{" "}
+        <span className="font-semibold">{phone}</span>. Enter your PIN to approve it.
+      </p>
+      <p className="text-xs text-muted-foreground">
+        This page turns your plan on the moment it goes through. You can close it — the payment
+        still counts.
+      </p>
+    </div>
   );
 }
 
@@ -407,19 +566,20 @@ function Steps({ step }: { step: "choose" | "send" | "confirm" }) {
 /**
  * No channel is configured on the server.
  *
- * This used to read "try again shortly", which is not true — nothing changes
- * until someone sets the details. Say what is actually wrong, to the one person
- * who can do something about it.
+ * Say what is actually wrong, to the one person who can do something about it,
+ * rather than asking them to try again later — nothing changes until somebody
+ * sets the credentials.
  */
 function NothingConfigured() {
   return (
     <div className="space-y-2 rounded-lg border border-warning/50 bg-warning-soft/40 p-4 text-sm">
-      <p className="font-semibold">No payment details have been set up yet.</p>
+      <p className="font-semibold">No way to pay has been set up yet.</p>
       <p className="text-muted-foreground">
-        SalesPos has not been given a number or account to collect subscriptions on, so there is
-        nothing to send money to. Whoever runs this SalesPos needs to set{" "}
-        <span className="font-mono text-xs">SUBSCRIPTION_MOMO_NUMBER</span> (or the Airtel or bank
-        equivalents) on the server, then reload this page.
+        SalesPos has not been given mobile money credentials or an account to collect
+        subscriptions on. Whoever runs this SalesPos needs to set{" "}
+        <span className="font-mono text-xs">MTN_MOMO_*</span> or{" "}
+        <span className="font-mono text-xs">AIRTEL_*</span> on the server — or a number to send
+        to — and then reload this page.
       </p>
     </div>
   );

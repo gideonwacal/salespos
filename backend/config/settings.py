@@ -249,34 +249,46 @@ SUBSCRIPTION_BANK_ACCOUNT_NUMBER = os.environ.get(
 ).strip()
 SUBSCRIPTION_BANK_BRANCH = os.environ.get("SUBSCRIPTION_BANK_BRANCH", "").strip()
 
-# Online payments through Flutterwave.
+# Mobile money collections, straight from the telcos.
 #
-# Flutterwave hosts the payment page, so no card number touches this server or
-# the browser bundle — and the same page takes MTN and Airtel money, which is
-# why it is here rather than a card-only gateway. The channel only appears on
-# the billing page once a secret key is set.
+# No aggregator holds the float and no foreign entity is needed: the shop gets
+# a PIN prompt on its own handset and the money lands in our merchant wallet.
+# Each network appears on the billing page only once its credentials are set,
+# so a deployment can run one, both, or neither.
 #
-# The secret hash is separate and just as required: it is the shared value
-# Flutterwave sends back in the `verif-hash` header, and without it a stranger
-# could POST "payment successful" and activate their own plan for free.
-FLUTTERWAVE_SECRET_KEY = os.environ.get("FLUTTERWAVE_SECRET_KEY", "").strip()
-FLUTTERWAVE_SECRET_HASH = os.environ.get("FLUTTERWAVE_SECRET_HASH", "").strip()
+# MTN: momodeveloper.mtn.com -> subscribe to Collections. Sandbox gives the API
+# user and key immediately; production issues them after approval.
+MTN_MOMO_SUBSCRIPTION_KEY = os.environ.get("MTN_MOMO_SUBSCRIPTION_KEY", "").strip()
+MTN_MOMO_API_USER = os.environ.get("MTN_MOMO_API_USER", "").strip()
+MTN_MOMO_API_KEY = os.environ.get("MTN_MOMO_API_KEY", "").strip()
+# "sandbox" while testing, "mtnuganda" once live. Sending sandbox calls to the
+# live host, or the other way round, fails with a message about the token that
+# never mentions the environment — so it is spelt out here.
+MTN_MOMO_ENVIRONMENT = os.environ.get("MTN_MOMO_ENVIRONMENT", "sandbox").strip()
+MTN_MOMO_BASE_URL = os.environ.get(
+    "MTN_MOMO_BASE_URL",
+    "https://sandbox.momodeveloper.mtn.com"
+    if MTN_MOMO_ENVIRONMENT == "sandbox"
+    else "https://proxy.momoapi.mtn.com",
+).strip().rstrip("/")
 
-# Which methods the hosted page offers. Ugandan mobile money is listed first
-# because most shops will reach for it before a card.
-FLUTTERWAVE_PAYMENT_OPTIONS = os.environ.get(
-    "FLUTTERWAVE_PAYMENT_OPTIONS", "mobilemoneyuganda, card, ussd, banktransfer"
-).strip()
+# Airtel: developers.airtel.africa -> Collections.
+AIRTEL_CLIENT_ID = os.environ.get("AIRTEL_CLIENT_ID", "").strip()
+AIRTEL_CLIENT_SECRET = os.environ.get("AIRTEL_CLIENT_SECRET", "").strip()
+AIRTEL_BASE_URL = os.environ.get(
+    "AIRTEL_BASE_URL", "https://openapiuat.airtel.africa"
+).strip().rstrip("/")
+AIRTEL_COUNTRY = os.environ.get("AIRTEL_COUNTRY", "UG").strip()
+AIRTEL_CURRENCY = os.environ.get("AIRTEL_CURRENCY", "UGX").strip()
 
-# Where Flutterwave sends the shop back to. The billing page reads the result
-# from the query string; falling back to the first allowed origin means a
-# normal deployment needs no extra setting.
+# Where the app itself runs, for links back to it. Falling back to the first
+# allowed origin means a normal deployment needs no extra setting.
 APP_BASE_URL = os.environ.get("APP_BASE_URL", "").strip().rstrip("/")
 if not APP_BASE_URL and CORS_ALLOWED_ORIGINS:
     APP_BASE_URL = CORS_ALLOWED_ORIGINS[0].rstrip("/")
 
-# Flutterwave takes amounts in whole currency units — 50000 means fifty
-# thousand shillings, not five hundred. No minor-unit arithmetic to get wrong.
+# Both telcos take amounts in whole shillings — 50000 means fifty thousand.
+# No minor-unit arithmetic to get wrong.
 
 # Rate limits on the billing endpoints: enough for a real shop, too few to
 # scrape the payment number or flood the admin with made-up transaction IDs.

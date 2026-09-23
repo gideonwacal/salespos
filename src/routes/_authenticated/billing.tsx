@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Check, Lightbulb, Minus, Smartphone } from "lucide-react";
@@ -14,12 +14,7 @@ import {
   type ModuleId,
   type PlanId,
 } from "@/lib/demo";
-import {
-  fetchBillingInfo,
-  fetchMe,
-  listSubscriptionPayments,
-  verifyCardPayment,
-} from "@/lib/api";
+import { fetchBillingInfo, fetchMe, listSubscriptionPayments } from "@/lib/api";
 import { businessFrom } from "@/lib/auth";
 import { isServerTable } from "@/lib/db";
 import { PaymentDialog } from "@/components/PaymentDialog";
@@ -113,50 +108,6 @@ function Billing() {
     },
   });
   const pending = payments.filter((p) => p.status === "pending");
-
-  // Flutterwave sends the shop back here with ?status=...&tx_ref=...&
-  // transaction_id=... The webhook is what really turns the plan on, but it can
-  // arrive late or be misconfigured, so we also ask the server to check — the
-  // answer comes from Flutterwave either way, never from these parameters.
-  // Then the query string is cleared so a refresh cannot replay it.
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const params = new URLSearchParams(window.location.search);
-    const result = (params.get("status") ?? "").toLowerCase();
-    const transactionId = params.get("transaction_id") ?? "";
-    const txRef = params.get("tx_ref") ?? "";
-    if (!result && !transactionId) return;
-
-    const clean = () => {
-      for (const key of ["status", "tx_ref", "transaction_id"]) params.delete(key);
-      const query = params.toString();
-      window.history.replaceState(
-        {},
-        "",
-        `${window.location.pathname}${query ? `?${query}` : ""}`,
-      );
-    };
-
-    if (result === "successful" || result === "completed") {
-      verifyCardPayment({ transaction_id: transactionId, tx_ref: txRef })
-        .then(({ approved }) => {
-          toast.success(
-            approved
-              ? "Payment confirmed — your plan is active."
-              : "Payment received. Your plan turns on as soon as it is confirmed.",
-          );
-        })
-        .catch(() => {
-          toast.info("Payment received. Your plan turns on as soon as it is confirmed.");
-        })
-        .finally(() => {
-          queryClient.invalidateQueries({ queryKey: ["subscription-payments"] });
-        });
-    } else if (result) {
-      toast.error("That payment did not go through. Nothing was charged.");
-    }
-    clean();
-  }, [queryClient]);
 
   const pay = (id: PlanId) => {
     // The demo is a sales pitch with no server behind it, so it still

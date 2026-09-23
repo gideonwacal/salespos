@@ -1,13 +1,9 @@
-import secrets
-import uuid
-from decimal import Decimal
-
 from django.conf import settings
 from django.db import transaction
 from django.utils.cache import add_never_cache_headers
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
-from rest_framework.exceptions import ValidationError
+from rest_framework.exceptions import NotFound, ValidationError
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
@@ -23,6 +19,7 @@ from apps.accounts.models import (
     User,
     Workspace,
 )
+from apps.accounts import momo
 from apps.accounts.serializers import (
     InviteMemberSerializer,
     MembershipSerializer,
@@ -224,7 +221,28 @@ def payment_channels() -> list:
     """
     channels = []
 
-    if settings.SUBSCRIPTION_MOMO_NUMBER:
+    # The API channels come first: when a telco can prompt the phone directly,
+    # that is the way to pay, and sending money by hand is the fallback for a
+    # network whose credentials are not set.
+    if momo.mtn_available():
+        channels.append(
+            {
+                "id": "mtn_momo",
+                "kind": "collect",
+                "label": "MTN Mobile Money",
+                "account": "",
+                "account_label": "Approve on your phone",
+                "holder": "",
+                "instructions": (
+                    "We will send a payment request to your MTN line. "
+                    "Approve it with your PIN and your plan turns on straight away."
+                ),
+                "reference_label": "",
+                "reference_hint": "",
+                "note": "",
+            }
+        )
+    elif settings.SUBSCRIPTION_MOMO_NUMBER:
         channels.append(
             {
                 "id": "mtn_momo",
@@ -240,7 +258,25 @@ def payment_channels() -> list:
             }
         )
 
-    if settings.SUBSCRIPTION_AIRTEL_NUMBER:
+    if momo.airtel_available():
+        channels.append(
+            {
+                "id": "airtel_money",
+                "kind": "collect",
+                "label": "Airtel Money",
+                "account": "",
+                "account_label": "Approve on your phone",
+                "holder": "",
+                "instructions": (
+                    "We will send a payment request to your Airtel line. "
+                    "Approve it with your PIN and your plan turns on straight away."
+                ),
+                "reference_label": "",
+                "reference_hint": "",
+                "note": "",
+            }
+        )
+    elif settings.SUBSCRIPTION_AIRTEL_NUMBER:
         channels.append(
             {
                 "id": "airtel_money",
@@ -252,27 +288,6 @@ def payment_channels() -> list:
                 "instructions": "Dial *185#, choose Send Money, or use the Airtel Money app.",
                 "reference_label": "Transaction ID",
                 "reference_hint": "From the Airtel confirmation SMS",
-                "note": "",
-            }
-        )
-
-    if settings.FLUTTERWAVE_SECRET_KEY:
-        channels.append(
-            {
-                "id": "flutterwave",
-                "kind": "card",
-                "label": "Pay now — card or mobile money",
-                # Filled in on Flutterwave's page, so there is nothing to copy
-                # here and nothing to type back afterwards.
-                "account": "",
-                "account_label": "Visa, Mastercard, MTN MoMo, Airtel Money",
-                "holder": "",
-                "instructions": (
-                    "You will be taken to Flutterwave's secure page to pay. "
-                    "Your plan turns on the moment the payment goes through."
-                ),
-                "reference_label": "",
-                "reference_hint": "",
                 "note": "",
             }
         )
@@ -339,80 +354,29 @@ class BillingInfoView(APIView):
         return response
 
 
-def flutterwave_request(method: str, path: str, payload: dict | None = None) -> dict:
-    """Call Flutterwave with the secret key, and hand back the parsed body.
-
-    Kept deliberately small: two endpoints are used, one to start a payment and
-    one to verify it, and both answer the same {status, message, data} shape.
-    """
-    import requests
-
-    response = requests.request(
-        method,
-        f"https://api.flutterwave.com/v3{path}",
-        json=payload,
-        headers={
-            "Authorization": f"Bearer {settings.FLUTTERWAVE_SECRET_KEY}",
-            "Content-Type": "application/json",
-        },
-        timeout=20,
-    )
+def _plan_and_months(request):
+    """The two things a payment is for, priced by us and never by the browser."""
+    plan = str(request.data.get("plan", "")).strip()
+    if plan not in PLAN_PRICES_UGX:
+        raise ValidationError({"plan": "Choose one of the published plans."})
     try:
-        return response.json()
-    except ValueError:
-        return {"status": "error", "message": f"Flutterwave replied {response.status_code}"}
+        months = int(request.data.get("months", 1))
+    except (TypeError, ValueError):
+        raise ValidationError({"months": "Choose how many months."})
+    if months not in dict(MONTHS_CHOICES):
+        raise ValidationError({"months": "Choose how many months."})
+    return plan, months
 
 
-def approve_flutterwave_payment(transaction_id, tx_ref=None) -> bool:
-    """Verify a transaction with Flutterwave, then activate the plan it paid for.
+class MobileMoneyChargeView(APIView):
+    """POST /api/billing/charge/ — prompt a phone for the subscription.
 
-    The callback and the webhook both land here, and neither is trusted for the
-    amount: Flutterwave is asked directly what was paid, and the answer is
-    checked against the row we wrote before the shop ever left. A payment that
-    comes back short, in the wrong currency, or against a plan nobody started is
-    refused rather than honoured.
+    The shop gives a number; the telco puts a PIN request on that handset. No
+    card, no redirect, no aggregator holding the money on the way through.
 
-    Safe to run twice. approve() is a no-op once approved, which is what makes
-    a webhook retry — and a shop that also lands on the redirect — harmless.
-    """
-    if not transaction_id:
-        return False
-
-    body = flutterwave_request("GET", f"/transactions/{transaction_id}/verify")
-    data = body.get("data") or {}
-    if body.get("status") != "success" or data.get("status") != "successful":
-        return False
-
-    reference = data.get("tx_ref") or tx_ref
-    payment = SubscriptionPayment.objects.filter(transaction_id=reference).first()
-    if payment is None:
-        return False
-    if payment.status == "approved":
-        return True
-
-    # What Flutterwave says was actually paid, against what we asked for.
-    paid = Decimal(str(data.get("amount") or 0))
-    currency = str(data.get("currency") or "").upper()
-    if currency != payment.currency.upper() or paid < payment.amount:
-        payment.status = "rejected"
-        payment.note = f"Paid {paid} {currency}, expected {payment.amount} {payment.currency}"
-        payment.save(update_fields=["status", "note"])
-        return False
-
-    payment.approve()
-    return True
-
-
-class FlutterwaveCheckoutView(APIView):
-    """POST /api/billing/checkout/ — start a card or mobile money payment.
-
-    Flutterwave hosts the payment page, so no card number reaches this server
-    or the browser bundle, and the same page takes MTN and Airtel money — which
-    is the whole reason for choosing it here rather than a card-only gateway.
-
-    The pending payment row is written before the shop leaves, keyed by our own
-    reference. That row is what the webhook approves, and it is why a shop that
-    pays and then closes the tab is still paid.
+    The pending row is written before the telco is called, keyed by the same
+    reference the request carries, so a prompt that is approved after the shop
+    has closed the browser still lands against something.
     """
 
     permission_classes = [IsAuthenticated]
@@ -428,25 +392,19 @@ class FlutterwaveCheckoutView(APIView):
         if workspace is None or role != "owner":
             self.permission_denied(request, message="Only the workspace owner can pay.")
         ensure_workspace_open(workspace)
-        if not settings.FLUTTERWAVE_SECRET_KEY:
-            self.permission_denied(request, message="Card payments are not set up yet.")
 
-        plan = str(request.data.get("plan", "")).strip()
-        if plan not in PLAN_PRICES_UGX:
-            raise ValidationError({"plan": "Choose one of the published plans."})
-        try:
-            months = int(request.data.get("months", 1))
-        except (TypeError, ValueError):
-            raise ValidationError({"months": "Choose how many months."})
-        if months not in dict(MONTHS_CHOICES):
-            raise ValidationError({"months": "Choose how many months."})
+        network = str(request.data.get("network", "")).strip()
+        if network not in {c["id"] for c in payment_channels() if c["kind"] == "collect"}:
+            raise ValidationError({"network": "That network is not available here."})
 
-        # Priced here, never by the browser.
+        phone = str(request.data.get("phone", "")).strip()
+        if sum(ch.isdigit() for ch in phone) < 9:
+            raise ValidationError({"phone": "Enter the phone number to charge."})
+
+        plan, months = _plan_and_months(request)
         total = PLAN_PRICES_UGX[plan] * months
         currency = "UGX"
-        # Ours, not theirs: the reference we will recognise when the money
-        # comes back, however it comes back.
-        tx_ref = f"salespos-{uuid.uuid4().hex[:20]}"
+        reference = momo.new_reference()
 
         payment = SubscriptionPayment.objects.create(
             workspace=workspace,
@@ -455,118 +413,85 @@ class FlutterwaveCheckoutView(APIView):
             months=months,
             amount=total,
             currency=currency,
-            network="flutterwave",
-            payer_phone=request.user.phone or workspace.phone or "card",
-            transaction_id=tx_ref,
+            network=network,
+            payer_phone=phone,
+            transaction_id=reference,
             status="pending",
         )
 
-        base = settings.APP_BASE_URL or ""
-        body = flutterwave_request(
-            "POST",
-            "/payments",
+        try:
+            momo.start_collection(
+                network=network,
+                reference=reference,
+                phone=phone,
+                amount=total,
+                currency=currency,
+                note=f"SalesPos {plan.title()} plan, {months} month{'s' if months != 1 else ''}",
+            )
+        except momo.CollectionError as error:
+            # Nothing was asked for, so the row would sit pending for ever.
+            payment.delete()
+            return Response({"detail": str(error)}, status=status.HTTP_502_BAD_GATEWAY)
+
+        return Response(
             {
-                "tx_ref": tx_ref,
-                "amount": str(total),
+                "reference": reference,
+                "status": "pending",
+                "amount": total,
                 "currency": currency,
-                "redirect_url": f"{base}/billing",
-                "payment_options": settings.FLUTTERWAVE_PAYMENT_OPTIONS,
-                "customer": {
-                    "email": request.user.email,
-                    "phonenumber": request.user.phone or workspace.phone or "",
-                    "name": request.user.full_name or workspace.name,
-                },
-                "customizations": {
-                    "title": "SalesPos subscription",
-                    "description": (
-                        f"{plan.title()} plan · {months} month"
-                        f"{'s' if months != 1 else ''} for {workspace.name}"
-                    ),
-                },
-                "meta": {
-                    "workspace_id": str(workspace.id),
-                    "plan": plan,
-                    "months": str(months),
-                },
-            },
+                "phone": phone,
+            }
         )
 
-        link = (body.get("data") or {}).get("link")
-        if body.get("status") != "success" or not link:
-            # Nothing was charged, so the row we just wrote would sit pending
-            # for ever. Take it back out.
-            payment.delete()
-            return Response(
-                {"detail": body.get("message") or "Could not start the payment."},
-                status=status.HTTP_502_BAD_GATEWAY,
-            )
 
-        return Response({"url": link, "id": tx_ref})
+class MobileMoneyStatusView(APIView):
+    """GET /api/billing/charge/<reference>/ — has the PIN been entered yet?
 
-
-class FlutterwaveVerifyView(APIView):
-    """POST /api/billing/verify/ — the shop is back from the payment page.
-
-    The webhook is what this really relies on, but webhooks get misconfigured
-    and retried late, and a shop staring at an unchanged plan after paying will
-    not wait patiently. Verifying on the way back costs one call and makes the
-    common case instant. It cannot be used to fake anything: the answer comes
-    from Flutterwave, not from the browser.
+    Polled by the billing page while the prompt is on the shop's phone. The
+    telco is the only thing asked; the browser cannot talk this into anything.
+    Approving is idempotent, so polling after it has already succeeded simply
+    returns the same answer.
     """
 
     permission_classes = [IsAuthenticated]
 
-    def post(self, request):
+    def get(self, request, reference):
         workspace, role = resolve_workspace(request)
         if workspace is None or role != "owner":
             self.permission_denied(request, message="Only the workspace owner can pay.")
-        if not settings.FLUTTERWAVE_SECRET_KEY:
-            self.permission_denied(request, message="Card payments are not set up yet.")
 
-        transaction_id = str(request.data.get("transaction_id", "")).strip()
-        tx_ref = str(request.data.get("tx_ref", "")).strip()
-        if not transaction_id:
-            raise ValidationError({"transaction_id": "Nothing to verify."})
+        payment = SubscriptionPayment.objects.filter(
+            transaction_id=reference, workspace=workspace
+        ).first()
+        if payment is None:
+            raise NotFound("No payment with that reference.")
 
-        # Only ever for this workspace's own reference.
-        if tx_ref and not SubscriptionPayment.objects.filter(
-            transaction_id=tx_ref, workspace=workspace
-        ).exists():
-            raise ValidationError({"tx_ref": "That payment does not belong to this business."})
+        if payment.status == "approved":
+            return Response({"status": "successful"})
+        if payment.status == "rejected":
+            return Response({"status": "failed", "reason": payment.note})
 
-        approved = approve_flutterwave_payment(transaction_id, tx_ref)
-        return Response({"approved": approved})
+        try:
+            state, body = momo.collection_status(
+                network=payment.network, reference=reference
+            )
+        except momo.CollectionError as error:
+            # Unreachable is not the same as unpaid: leave it pending and let
+            # the shop try again in a moment.
+            return Response({"status": "pending", "reason": str(error)})
 
+        if state == momo.SUCCESSFUL:
+            payment.approve()
+            return Response({"status": "successful"})
 
-class FlutterwaveWebhookView(APIView):
-    """POST /api/billing/flutterwave-webhook/ — Flutterwave saying money landed.
+        if state == momo.FAILED:
+            reason = str(body.get("reason") or "") if isinstance(body, dict) else ""
+            payment.status = "rejected"
+            payment.note = reason[:255] or "The payment was not completed"
+            payment.save(update_fields=["status", "note"])
+            return Response({"status": "failed", "reason": payment.note})
 
-    Open to the world by necessity, so the shared hash is the only thing
-    standing between a stranger and a free Enterprise plan. A missing or wrong
-    hash is refused, and so is every event on a deployment that never set one.
-    """
-
-    permission_classes = [AllowAny]
-    authentication_classes: list = []
-
-    def post(self, request):
-        expected = settings.FLUTTERWAVE_SECRET_HASH
-        if not expected:
-            return Response({"detail": "Webhook not configured."}, status=400)
-
-        # Flutterwave sends the hash verbatim; compare in constant time so the
-        # endpoint cannot be used to guess it one character at a time.
-        sent = request.META.get("HTTP_VERIF_HASH", "")
-        if not sent or not secrets.compare_digest(str(sent), expected):
-            return Response({"detail": "Invalid signature."}, status=400)
-
-        payload = request.data if isinstance(request.data, dict) else {}
-        data = payload.get("data") or {}
-        if str(data.get("status", "")).lower() == "successful":
-            approve_flutterwave_payment(data.get("id"), data.get("tx_ref"))
-
-        # Anything else is noise; 200 stops Flutterwave retrying it for ever.
-        return Response({"received": True})
+        return Response({"status": "pending"})
 
 
 class SubscriptionPaymentViewSet(viewsets.ModelViewSet):
@@ -603,11 +528,12 @@ class SubscriptionPaymentViewSet(viewsets.ModelViewSet):
         chosen = serializer.validated_data.get("network") or "mtn_momo"
         if chosen not in channels:
             raise ValidationError({"network": "That payment method is not available."})
-        # An online payment is confirmed by the gateway, never by someone
-        # typing a reference in: accepting one here would be accepting a claim.
-        if chosen == "flutterwave":
+        # A network we can charge directly is confirmed by the telco, never by
+        # someone typing a reference in: accepting one here would be accepting
+        # a claim instead of a payment.
+        if any(c["id"] == chosen and c["kind"] == "collect" for c in payment_channels()):
             raise ValidationError(
-                {"network": "Online payments are completed on the payment page, not reported here."}
+                {"network": "This payment is approved on your phone, not reported here."}
             )
         serializer.save(
             workspace=self.request.workspace,

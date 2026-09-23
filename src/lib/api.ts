@@ -435,32 +435,43 @@ export function fetchBillingInfo() {
   return request<BillingInfo>("/billing/");
 }
 
+export type ChargeStarted = {
+  reference: string;
+  status: string;
+  amount: number;
+  currency: string;
+  phone: string;
+};
+
 /**
- * Start an online payment.
+ * Ask the telco to put a PIN prompt on this phone.
  *
- * Returns the Flutterwave URL to send the browser to. The plan is turned on by
- * the webhook, not by anything the browser reports back, so closing the tab
- * after paying still leaves the shop paid.
+ * Returns straight away with a reference: nothing is paid yet, and the shop
+ * still has to approve it on the handset.
  */
-export function startCardCheckout(input: { plan: string; months: number }) {
-  return request<{ url: string; id: string }>("/billing/checkout/", {
+export function startMobileMoneyCharge(input: {
+  plan: string;
+  months: number;
+  network: string;
+  phone: string;
+}) {
+  return request<ChargeStarted>("/billing/charge/", {
     method: "POST",
     body: JSON.stringify(input),
   });
 }
 
 /**
- * Ask the server to check a payment the shop has just come back from.
+ * Has the PIN been entered yet?
  *
- * Belt and braces over the webhook: it makes the usual case instant instead of
- * leaving an owner staring at an unchanged plan. The server asks Flutterwave
- * what happened, so nothing here can be talked into approving anything.
+ * The server asks the telco; nothing the browser sends can talk it into
+ * approving anything. Safe to call repeatedly — and to call after it has
+ * already succeeded.
  */
-export function verifyCardPayment(input: { transaction_id: string; tx_ref?: string }) {
-  return request<{ approved: boolean }>("/billing/verify/", {
-    method: "POST",
-    body: JSON.stringify(input),
-  });
+export function checkMobileMoneyCharge(reference: string) {
+  return request<{ status: "pending" | "successful" | "failed"; reason?: string }>(
+    `/billing/charge/${encodeURIComponent(reference)}/`,
+  );
 }
 
 export async function listSubscriptionPayments() {

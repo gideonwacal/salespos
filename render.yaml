@@ -57,19 +57,26 @@ services:
         sync: false
       - key: SUBSCRIPTION_BANK_BRANCH
         sync: false
-      # Flutterwave: cards and Ugandan mobile money on one hosted page. The
-      # secret key makes the option appear; the secret hash is what turns a
-      # completed payment into an active plan. In the Flutterwave dashboard set
-      # Settings -> Webhooks to:
-      #   https://<this-service>.onrender.com/api/billing/flutterwave-webhook/
-      # with the same secret hash you put here.
-      - key: FLUTTERWAVE_SECRET_KEY
+      # Mobile money collections, straight from the telcos. With these set a
+      # shop approves a PIN prompt on its own phone and the plan turns on by
+      # itself; without them the manual numbers above are used instead.
+      # Keep MTN_MOMO_ENVIRONMENT as "sandbox" until MTN approves production,
+      # then set it to "mtnuganda" and clear MTN_MOMO_BASE_URL.
+      - key: MTN_MOMO_SUBSCRIPTION_KEY
         sync: false
-      - key: FLUTTERWAVE_SECRET_HASH
+      - key: MTN_MOMO_API_USER
         sync: false
-      - key: FLUTTERWAVE_PAYMENT_OPTIONS
+      - key: MTN_MOMO_API_KEY
         sync: false
-      # Your Vercel URL, so Flutterwave returns the shop to the billing page.
+      - key: MTN_MOMO_ENVIRONMENT
+        sync: false
+      - key: AIRTEL_CLIENT_ID
+        sync: false
+      - key: AIRTEL_CLIENT_SECRET
+        sync: false
+      - key: AIRTEL_BASE_URL
+        sync: false
+      # Your Vercel URL.
       - key: APP_BASE_URL
         sync: false
       - key: JWT_ACCESS_MINUTES

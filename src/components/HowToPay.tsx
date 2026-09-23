@@ -24,10 +24,11 @@ export function HowToPay({
 }) {
   if (!isOwner) return null;
 
-  // A card is not a destination: there is nothing to send to and nothing to
-  // copy, so it belongs in the pay flow rather than in this list.
-  const channels = (info?.channels ?? []).filter((c) => c.kind !== "card");
-  const takesCards = (info?.channels ?? []).some((c) => c.kind === "card");
+  // Only the channels money is actually sent to belong in this list. A network
+  // we can charge directly has no destination to copy — the prompt comes to
+  // the shop's own phone — so it lives in the pay flow instead.
+  const channels = (info?.channels ?? []).filter((c) => !!c.account);
+  const prompts = (info?.channels ?? []).some((c) => c.kind === "collect");
 
   const copy = async (value: string, what: string) => {
     try {
@@ -45,18 +46,18 @@ export function HowToPay({
           <Wallet className="size-4 text-brand" /> Where to send the money
         </CardTitle>
         <p className="text-xs text-muted-foreground">
-          {takesCards
-            ? "Pick a package below to pay online, or send mobile money to one of these and confirm afterwards."
+          {prompts
+            ? "Pick a package below and approve the request on your phone, or send money to one of these and confirm afterwards."
             : "Pick a package below to pay step by step, or send it directly to any of these and confirm afterwards."}
         </p>
       </CardHeader>
       <CardContent className="space-y-3">
         {loading && channels.length === 0 ? (
           <p className="text-sm text-muted-foreground">Loading payment details…</p>
-        ) : channels.length === 0 && takesCards ? (
+        ) : channels.length === 0 && prompts ? (
           <p className="text-sm text-muted-foreground">
-            Everything is paid online here. Pick a package below and pay by card or mobile money
-            on the secure page — there is nothing to send by hand.
+            Nothing to send by hand. Pick a package below, give the phone number to charge, and
+            approve the request with your PIN.
           </p>
         ) : channels.length === 0 ? (
           <div className="space-y-1 rounded-lg border border-warning/50 bg-warning-soft/40 p-3 text-sm">

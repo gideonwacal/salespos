@@ -189,7 +189,6 @@ class SubscriptionPayment(models.Model):
         ("mtn_momo", "MTN Mobile Money"),
         ("airtel_money", "Airtel Money"),
         ("bank_card", "Bank transfer"),
-        ("flutterwave", "Card or mobile money (Flutterwave)"),
     ]
 
     # Which rail the money came down, so whoever confirms it knows which
