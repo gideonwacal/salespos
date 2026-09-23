@@ -388,6 +388,23 @@ export function clearStore(mode: "zero" | "delete") {
 /* subscription billing                                                */
 /* ------------------------------------------------------------------ */
 
+/** One way to pay, as the server published it. */
+export type PaymentChannel = {
+  id: string;
+  /** "mobile_money" or "bank": decides the wording, not the flow. */
+  kind: string;
+  label: string;
+  /** The number or account the money goes to. */
+  account: string;
+  account_label: string;
+  /** Whose name the shop should see before confirming. */
+  holder: string;
+  instructions: string;
+  reference_label: string;
+  reference_hint: string;
+  note?: string;
+};
+
 export type BillingInfo = {
   network: string;
   /** Empty until SUBSCRIPTION_MOMO_NUMBER is set on the server. */
@@ -395,6 +412,8 @@ export type BillingInfo = {
   name: string;
   currency: string;
   prices: Record<string, number>;
+  /** Every configured channel. Empty means nothing is set up on the server. */
+  channels?: PaymentChannel[];
 };
 
 export type SubscriptionPayment = {
@@ -429,6 +448,8 @@ export function submitSubscriptionPayment(input: {
   months: number;
   payer_phone: string;
   transaction_id: string;
+  /** Which channel the money came down; the server checks it is one it published. */
+  network?: string;
 }) {
   return request<SubscriptionPayment>("/subscription-payments/", {
     method: "POST",

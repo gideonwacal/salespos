@@ -270,3 +270,110 @@ class MomoNumberSettingTests(APITestCase):
         self.assertEqual(mtn_uganda_number("0701234567"), "")  # Airtel prefix
         self.assertEqual(mtn_uganda_number("077123456"), "")
         self.assertEqual(mtn_uganda_number(""), "")
+
+    def test_only_real_airtel_uganda_numbers_are_accepted(self):
+        from config.settings import airtel_uganda_number
+
+        self.assertEqual(airtel_uganda_number("0701234567"), "0701 234 567")
+        self.assertEqual(airtel_uganda_number("+256 751 234 567"), "0751 234 567")
+        self.assertEqual(airtel_uganda_number("0771234567"), "")  # MTN prefix
+        self.assertEqual(airtel_uganda_number(""), "")
+
+
+@override_settings(
+    SUBSCRIPTION_MOMO_NUMBER="0770000000",
+    SUBSCRIPTION_MOMO_NAME="Test MTN",
+    SUBSCRIPTION_AIRTEL_NUMBER="0700000000",
+    SUBSCRIPTION_AIRTEL_NAME="Test Airtel",
+    SUBSCRIPTION_BANK_NAME="Stanbic",
+    SUBSCRIPTION_BANK_ACCOUNT_NAME="SalesPos Ltd",
+    SUBSCRIPTION_BANK_ACCOUNT_NUMBER="9030001234567",
+    SUBSCRIPTION_BANK_BRANCH="Kampala Road",
+)
+class PaymentChannelTests(APITestCase):
+    """Every rail the deployment was given details for, and nothing else."""
+
+    def setUp(self):
+        self.owner = User.objects.create_user(email="owner@shop.com", password="sup3rsecret!")
+        self.workspace = Workspace.objects.create(name="Shop")
+        Membership.objects.create(user=self.owner, workspace=self.workspace, role="owner")
+        self.client.force_authenticate(user=self.owner)
+
+    def test_configured_channels_are_published_to_the_owner(self):
+        response = self.client.get("/api/billing/")
+        self.assertEqual(response.status_code, 200)
+
+        by_id = {c["id"]: c for c in response.data["channels"]}
+        self.assertEqual(set(by_id), {"mtn_momo", "airtel_money", "bank_card"})
+        self.assertEqual(by_id["airtel_money"]["account"], "0700000000")
+        self.assertEqual(by_id["bank_card"]["account"], "9030001234567")
+        # The bank line has to say where, or a transfer cannot be addressed.
+        self.assertIn("Stanbic", by_id["bank_card"]["instructions"])
+        self.assertIn("Kampala Road", by_id["bank_card"]["instructions"])
+
+    def test_a_payment_records_the_rail_it_came_down(self):
+        response = self.client.post(
+            "/api/subscription-payments/",
+            {
+                "plan": "growth",
+                "months": 1,
+                "payer_phone": "0751 234 567",
+                "transaction_id": "AIR123456",
+                "network": "airtel_money",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(
+            SubscriptionPayment.objects.get(transaction_id="AIR123456").network,
+            "airtel_money",
+        )
+
+    def test_an_unpublished_rail_is_refused(self):
+        """Money down a rail we never named is money we cannot match."""
+        with override_settings(SUBSCRIPTION_AIRTEL_NUMBER=""):
+            response = self.client.post(
+                "/api/subscription-payments/",
+                {
+                    "plan": "growth",
+                    "months": 1,
+                    "payer_phone": "0751 234 567",
+                    "transaction_id": "AIR999999",
+                    "network": "airtel_money",
+                },
+                format="json",
+            )
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(SubscriptionPayment.objects.filter(transaction_id="AIR999999").exists())
+
+
+class NoPaymentChannelTests(APITestCase):
+    """With nothing configured, the page must say so rather than take money."""
+
+    def setUp(self):
+        self.owner = User.objects.create_user(email="owner@shop.com", password="sup3rsecret!")
+        self.workspace = Workspace.objects.create(name="Shop")
+        Membership.objects.create(user=self.owner, workspace=self.workspace, role="owner")
+        self.client.force_authenticate(user=self.owner)
+
+    @override_settings(
+        SUBSCRIPTION_MOMO_NUMBER="",
+        SUBSCRIPTION_AIRTEL_NUMBER="",
+        SUBSCRIPTION_BANK_ACCOUNT_NUMBER="",
+    )
+    def test_no_channels_and_no_payments(self):
+        response = self.client.get("/api/billing/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["channels"], [])
+
+        submitted = self.client.post(
+            "/api/subscription-payments/",
+            {
+                "plan": "growth",
+                "months": 1,
+                "payer_phone": "0771 234 567",
+                "transaction_id": "NONE123456",
+            },
+            format="json",
+        )
+        self.assertEqual(submitted.status_code, 403)

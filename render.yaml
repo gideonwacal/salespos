@@ -34,11 +34,28 @@ services:
       # Your Vercel URL, e.g. https://salespos.vercel.app
       - key: CORS_ALLOWED_ORIGINS
         sync: false
-      # The MTN MoMo number shops pay subscriptions to, and the name MTN shows
-      # for it. Secret: set in the dashboard only, never committed here.
+      # Where shops send their subscriptions. Every one is optional and set in
+      # the dashboard only, never committed here — but until at least one is
+      # set, the billing page has no number to show and nobody can pay.
+      #
+      # MTN MoMo: a real MTN Uganda line (076/077/078/079/039) or it is dropped.
       - key: SUBSCRIPTION_MOMO_NUMBER
         sync: false
       - key: SUBSCRIPTION_MOMO_NAME
+        sync: false
+      # Airtel Money: 070/074/075/020, same rule.
+      - key: SUBSCRIPTION_AIRTEL_NUMBER
+        sync: false
+      - key: SUBSCRIPTION_AIRTEL_NAME
+        sync: false
+      # Bank transfer, which is also how a card pays — there is no card gateway.
+      - key: SUBSCRIPTION_BANK_NAME
+        sync: false
+      - key: SUBSCRIPTION_BANK_ACCOUNT_NAME
+        sync: false
+      - key: SUBSCRIPTION_BANK_ACCOUNT_NUMBER
+        sync: false
+      - key: SUBSCRIPTION_BANK_BRANCH
         sync: false
       - key: JWT_ACCESS_MINUTES
         value: "60"

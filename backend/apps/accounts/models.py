@@ -185,7 +185,17 @@ class SubscriptionPayment(models.Model):
     months = models.PositiveSmallIntegerField(choices=MONTHS_CHOICES, default=1)
     amount = models.DecimalField(max_digits=12, decimal_places=0)
     currency = models.CharField(max_length=8, default="UGX")
-    network = models.CharField(max_length=20, default="mtn_momo")
+    NETWORK_CHOICES = [
+        ("mtn_momo", "MTN Mobile Money"),
+        ("airtel_money", "Airtel Money"),
+        ("bank_card", "Card or bank transfer"),
+    ]
+
+    # Which rail the money came down, so whoever confirms it knows which
+    # statement to open.
+    network = models.CharField(
+        max_length=20, choices=NETWORK_CHOICES, default="mtn_momo"
+    )
     payer_phone = models.CharField(max_length=40)
     transaction_id = models.CharField(max_length=60, unique=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending")

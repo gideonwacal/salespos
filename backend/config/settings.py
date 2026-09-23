@@ -203,18 +203,51 @@ CORS_ALLOW_HEADERS = (
 # paying shops, so a typo can't send their money to a stranger.
 SUBSCRIPTION_MOMO_NETWORK = "MTN Mobile Money"
 
+MTN_UG_PREFIXES = {"076", "077", "078", "079", "039"}
+AIRTEL_UG_PREFIXES = {"070", "074", "075", "020"}
 
-def mtn_uganda_number(raw: str) -> str:
+
+def ug_number(raw: str, prefixes: set) -> str:
+    """Format a Ugandan mobile number, or return "" if it is not one of these.
+
+    A number that fails this check is dropped rather than shown, so a typo in
+    an environment variable cannot send a shop's subscription to a stranger.
+    """
     digits = "".join(ch for ch in raw if ch.isdigit())
     if digits.startswith("256"):
         digits = "0" + digits[3:]
-    if len(digits) == 10 and digits[:3] in {"076", "077", "078", "079", "039"}:
+    if len(digits) == 10 and digits[:3] in prefixes:
         return f"{digits[:4]} {digits[4:7]} {digits[7:]}"
     return ""
 
 
+def mtn_uganda_number(raw: str) -> str:
+    return ug_number(raw, MTN_UG_PREFIXES)
+
+
+def airtel_uganda_number(raw: str) -> str:
+    return ug_number(raw, AIRTEL_UG_PREFIXES)
+
+
 SUBSCRIPTION_MOMO_NUMBER = mtn_uganda_number(os.environ.get("SUBSCRIPTION_MOMO_NUMBER", ""))
 SUBSCRIPTION_MOMO_NAME = os.environ.get("SUBSCRIPTION_MOMO_NAME", "").strip()
+
+# Airtel Money, for the half of the country that is not on MTN. Optional: a
+# channel with no number set simply is not offered.
+SUBSCRIPTION_AIRTEL_NUMBER = airtel_uganda_number(
+    os.environ.get("SUBSCRIPTION_AIRTEL_NUMBER", "")
+)
+SUBSCRIPTION_AIRTEL_NAME = os.environ.get("SUBSCRIPTION_AIRTEL_NAME", "").strip()
+
+# Bank transfer, which is also how a card pays: there is no card gateway behind
+# SalesPos, so a shop paying by card moves the money to this account from its
+# own bank or card app, and the reference is what ties it back to the shop.
+SUBSCRIPTION_BANK_NAME = os.environ.get("SUBSCRIPTION_BANK_NAME", "").strip()
+SUBSCRIPTION_BANK_ACCOUNT_NAME = os.environ.get("SUBSCRIPTION_BANK_ACCOUNT_NAME", "").strip()
+SUBSCRIPTION_BANK_ACCOUNT_NUMBER = os.environ.get(
+    "SUBSCRIPTION_BANK_ACCOUNT_NUMBER", ""
+).strip()
+SUBSCRIPTION_BANK_BRANCH = os.environ.get("SUBSCRIPTION_BANK_BRANCH", "").strip()
 
 # Rate limits on the billing endpoints: enough for a real shop, too few to
 # scrape the payment number or flood the admin with made-up transaction IDs.

@@ -75,17 +75,24 @@ class SubscriptionPaymentSerializer(serializers.ModelSerializer):
             "id",
             "amount",
             "currency",
-            "network",
             "status",
             "note",
             "reviewed_at",
             "created_at",
         ]
+        extra_kwargs = {
+            # Which rail the money came down. Writable so the shop can say, and
+            # checked against the published channels in the view — the server
+            # decides what exists, the client only picks from it.
+            "network": {"required": False},
+        }
 
     def validate_transaction_id(self, value):
         value = value.strip().upper()
         if len(value) < 6:
-            raise serializers.ValidationError("Enter the transaction ID from the MTN message.")
+            raise serializers.ValidationError(
+                "Enter the transaction ID or reference from your payment confirmation."
+            )
         if SubscriptionPayment.objects.filter(transaction_id=value).exists():
             raise serializers.ValidationError("That transaction ID has already been submitted.")
         return value

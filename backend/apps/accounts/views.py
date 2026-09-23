@@ -3,6 +3,7 @@ from django.db import transaction
 from django.utils.cache import add_never_cache_headers
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
+from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
@@ -209,6 +210,80 @@ class MembershipViewSet(viewsets.ModelViewSet):
         return Response(MembershipSerializer(membership).data)
 
 
+def payment_channels() -> list:
+    """Every way to pay this deployment has actually been given details for.
+
+    A channel with nothing behind it is left out rather than shown as an empty
+    box: an owner should never be asked to send money somewhere the server
+    could not name.
+    """
+    channels = []
+
+    if settings.SUBSCRIPTION_MOMO_NUMBER:
+        channels.append(
+            {
+                "id": "mtn_momo",
+                "kind": "mobile_money",
+                "label": "MTN Mobile Money",
+                "account": settings.SUBSCRIPTION_MOMO_NUMBER,
+                "account_label": "Send to",
+                "holder": settings.SUBSCRIPTION_MOMO_NAME,
+                "instructions": "Dial *165#, choose Send Money, or use the MoMo app.",
+                "reference_label": "Transaction ID",
+                "reference_hint": "From the MTN confirmation SMS",
+                "note": "",
+            }
+        )
+
+    if settings.SUBSCRIPTION_AIRTEL_NUMBER:
+        channels.append(
+            {
+                "id": "airtel_money",
+                "kind": "mobile_money",
+                "label": "Airtel Money",
+                "account": settings.SUBSCRIPTION_AIRTEL_NUMBER,
+                "account_label": "Send to",
+                "holder": settings.SUBSCRIPTION_AIRTEL_NAME,
+                "instructions": "Dial *185#, choose Send Money, or use the Airtel Money app.",
+                "reference_label": "Transaction ID",
+                "reference_hint": "From the Airtel confirmation SMS",
+                "note": "",
+            }
+        )
+
+    if settings.SUBSCRIPTION_BANK_ACCOUNT_NUMBER:
+        where = " · ".join(
+            part
+            for part in (
+                settings.SUBSCRIPTION_BANK_NAME,
+                settings.SUBSCRIPTION_BANK_BRANCH,
+            )
+            if part
+        )
+        channels.append(
+            {
+                "id": "bank_card",
+                "kind": "bank",
+                "label": "Card or bank transfer",
+                "account": settings.SUBSCRIPTION_BANK_ACCOUNT_NUMBER,
+                "account_label": "Account number",
+                "holder": settings.SUBSCRIPTION_BANK_ACCOUNT_NAME,
+                "instructions": (
+                    f"Transfer to {where} from your bank or card app."
+                    if where
+                    else "Transfer from your bank or card app."
+                ),
+                "reference_label": "Reference or receipt number",
+                "reference_hint": "From your bank or card confirmation",
+                # Said plainly rather than implied: there is no card gateway
+                # here, and a shop that expects one would wait for nothing.
+                "note": "Your card is not charged inside SalesPos — you move the money yourself.",
+            }
+        )
+
+    return channels
+
+
 class BillingInfoView(APIView):
     """GET /api/billing/ — where to send the subscription, and what it costs.
 
@@ -227,11 +302,13 @@ class BillingInfoView(APIView):
             self.permission_denied(request, message="Only the workspace owner can pay.")
         response = Response(
             {
+                # Kept for clients built before there was more than one rail.
                 "network": settings.SUBSCRIPTION_MOMO_NETWORK,
                 "number": settings.SUBSCRIPTION_MOMO_NUMBER,
                 "name": settings.SUBSCRIPTION_MOMO_NAME,
                 "currency": "UGX",
                 "prices": PLAN_PRICES_UGX,
+                "channels": payment_channels(),
             }
         )
         add_never_cache_headers(response)
@@ -262,8 +339,18 @@ class SubscriptionPaymentViewSet(viewsets.ModelViewSet):
         return SubscriptionPayment.objects.filter(workspace=self.request.workspace)
 
     def perform_create(self, serializer):
-        if not settings.SUBSCRIPTION_MOMO_NUMBER:
+        channels = {c["id"] for c in payment_channels()}
+        if not channels:
             self.permission_denied(
                 self.request, message="Subscription payments are not set up yet."
             )
-        serializer.save(workspace=self.request.workspace, submitted_by=self.request.user)
+        # The rail must be one this deployment actually published, or the money
+        # went somewhere we never named and cannot match against.
+        chosen = serializer.validated_data.get("network") or "mtn_momo"
+        if chosen not in channels:
+            raise ValidationError({"network": "That payment method is not available."})
+        serializer.save(
+            workspace=self.request.workspace,
+            submitted_by=self.request.user,
+            network=chosen,
+        )

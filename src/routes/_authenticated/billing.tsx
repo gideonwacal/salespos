@@ -17,7 +17,8 @@ import {
 import { fetchBillingInfo, fetchMe, listSubscriptionPayments } from "@/lib/api";
 import { businessFrom } from "@/lib/auth";
 import { isServerTable } from "@/lib/db";
-import { MomoPaymentDialog } from "@/components/MomoPaymentDialog";
+import { PaymentDialog } from "@/components/PaymentDialog";
+import { HowToPay } from "@/components/HowToPay";
 import { useAuth } from "@/hooks/useAuth";
 import { useBusiness } from "@/hooks/useBusiness";
 import { useStaff, useCustomers, useDebts, useQuotations } from "@/lib/data";
@@ -80,14 +81,18 @@ function Billing() {
   const live = isServerTable("business");
   const [paying, setPaying] = useState<PlanId | null>(null);
 
-  // The payment number is only fetched while the owner has the pay dialog open,
-  // and dropped from the query cache as soon as it closes.
-  const { data: billingInfo } = useQuery({
+  // The payment details are fetched for the owner on this page, not only while
+  // the dialog is open: an owner asking "where do I deposit?" should be able to
+  // read the number without first starting a payment. Still owner-only and
+  // rate-limited on the server, so it is cached for a few minutes rather than
+  // re-fetched on every glance.
+  const { data: billingInfo, isLoading: billingLoading } = useQuery({
     queryKey: ["billing-info"],
     queryFn: fetchBillingInfo,
-    enabled: live && isOwner && paying !== null,
-    staleTime: 0,
-    gcTime: 0,
+    enabled: live && isOwner,
+    staleTime: 5 * 60_000,
+    gcTime: 5 * 60_000,
+    refetchOnWindowFocus: false,
   });
   const { data: payments = [] } = useQuery({
     queryKey: ["subscription-payments"],
@@ -205,6 +210,12 @@ function Billing() {
           </CardContent>
         </Card>
       ))}
+
+      {/* High on the page on purpose: "where do I deposit?" was unanswerable
+          without opening a payment first. */}
+      {!status.free && !status.suspended && (
+        <HowToPay info={billingInfo} loading={billingLoading} isOwner={isOwner} />
+      )}
 
       <Card
         className={cn(
@@ -390,16 +401,17 @@ function Billing() {
         <CardContent className="flex items-start gap-3 pt-6 text-sm text-muted-foreground">
           <Smartphone className="mt-0.5 size-4 text-brand" />
           <p>
-            Pay with MTN Mobile Money: send the amount to the number shown, then enter the
-            transaction ID from the SMS. Your plan activates once the payment is confirmed, and
+            Send the amount to one of the accounts above, then enter the transaction ID or
+            reference from your confirmation. Your plan activates once the payment is matched, and
             paying again adds the months on top of the time you have left.
           </p>
         </CardContent>
       </Card>
 
-      <MomoPaymentDialog
+      <PaymentDialog
         plan={paying}
         info={billingInfo}
+        loading={billingLoading}
         defaultPhone={business.phone}
         onOpenChange={(open) => !open && setPaying(null)}
         onSubmitted={() => queryClient.invalidateQueries({ queryKey: ["subscription-payments"] })}
