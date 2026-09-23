@@ -255,6 +255,9 @@ def payment_channels() -> list:
                 "reference_label": "Transaction ID",
                 "reference_hint": "From the MTN confirmation SMS",
                 "note": "",
+                # {number} and {amount} are filled in by the page, which is the
+                # only place that knows what this shop is paying.
+                "ussd": settings.SUBSCRIPTION_MOMO_USSD,
             }
         )
 
@@ -289,6 +292,7 @@ def payment_channels() -> list:
                 "reference_label": "Transaction ID",
                 "reference_hint": "From the Airtel confirmation SMS",
                 "note": "",
+                "ussd": settings.SUBSCRIPTION_AIRTEL_USSD,
             }
         )
 

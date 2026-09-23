@@ -578,3 +578,26 @@ class MsisdnTests(APITestCase):
         self.assertEqual(momo.msisdn("+256 771 234 567"), "256771234567")
         self.assertEqual(momo.msisdn("256771234567"), "256771234567")
         self.assertEqual(momo.msisdn("0701 234 567"), "256701234567")
+
+
+class DefaultPaymentNumberTests(APITestCase):
+    """A fresh deployment must still show a shop somewhere to send money."""
+
+    def setUp(self):
+        self.owner = User.objects.create_user(email="owner@shop.com", password="sup3rsecret!")
+        self.workspace = Workspace.objects.create(name="Shop")
+        Membership.objects.create(user=self.owner, workspace=self.workspace, role="owner")
+        self.client.force_authenticate(user=self.owner)
+
+    def test_a_number_is_served_without_any_environment_variable(self):
+        response = self.client.get("/api/billing/")
+        channels = {c["id"]: c for c in response.data["channels"]}
+        self.assertIn("mtn_momo", channels)
+        self.assertTrue(channels["mtn_momo"]["account"])
+
+    def test_the_dial_string_carries_both_placeholders(self):
+        """The page fills these in; a template missing one dials the wrong amount."""
+        response = self.client.get("/api/billing/")
+        mtn = next(c for c in response.data["channels"] if c["id"] == "mtn_momo")
+        self.assertIn("{number}", mtn["ussd"])
+        self.assertIn("{amount}", mtn["ussd"])

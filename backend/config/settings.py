@@ -229,8 +229,25 @@ def airtel_uganda_number(raw: str) -> str:
     return ug_number(raw, AIRTEL_UG_PREFIXES)
 
 
-SUBSCRIPTION_MOMO_NUMBER = mtn_uganda_number(os.environ.get("SUBSCRIPTION_MOMO_NUMBER", ""))
-SUBSCRIPTION_MOMO_NAME = os.environ.get("SUBSCRIPTION_MOMO_NAME", "").strip()
+# The line subscriptions are sent to. Defaulted rather than left blank on
+# purpose: a deployment that forgets the environment variable used to show
+# shops no number at all, which is indistinguishable from the app being
+# broken. Override it in the environment to collect somewhere else.
+SUBSCRIPTION_MOMO_NUMBER = mtn_uganda_number(
+    os.environ.get("SUBSCRIPTION_MOMO_NUMBER", "0760417357")
+)
+SUBSCRIPTION_MOMO_NAME = os.environ.get("SUBSCRIPTION_MOMO_NAME", "SalesPos").strip()
+
+# Tapped on a phone, this opens the dialler with the send-money string already
+# composed, so the shop does not key a ten-digit number in by hand. {number}
+# and {amount} are filled in per payment.
+#
+# MTN moves its menus around, so this is a convenience and not a promise: the
+# handset still shows every step and the shop still approves it. Set it to an
+# empty string to hide the button.
+SUBSCRIPTION_MOMO_USSD = os.environ.get(
+    "SUBSCRIPTION_MOMO_USSD", "*165*1*{number}*{amount}#"
+).strip()
 
 # Airtel Money, for the half of the country that is not on MTN. Optional: a
 # channel with no number set simply is not offered.
@@ -238,6 +255,9 @@ SUBSCRIPTION_AIRTEL_NUMBER = airtel_uganda_number(
     os.environ.get("SUBSCRIPTION_AIRTEL_NUMBER", "")
 )
 SUBSCRIPTION_AIRTEL_NAME = os.environ.get("SUBSCRIPTION_AIRTEL_NAME", "").strip()
+SUBSCRIPTION_AIRTEL_USSD = os.environ.get(
+    "SUBSCRIPTION_AIRTEL_USSD", "*185*1*{number}*{amount}#"
+).strip()
 
 # Bank transfer, which is also how a card pays: there is no card gateway behind
 # SalesPos, so a shop paying by card moves the money to this account from its

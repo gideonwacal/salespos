@@ -403,6 +403,8 @@ export type PaymentChannel = {
   reference_label: string;
   reference_hint: string;
   note?: string;
+  /** Send-money string with {number} and {amount} still to fill in. */
+  ussd?: string;
 };
 
 export type BillingInfo = {

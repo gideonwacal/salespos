@@ -177,6 +177,13 @@ export function PaymentDialog({
   const channel = channels.find((c) => c.id === channelId) ?? null;
   /** True when the telco can be asked to charge this number directly. */
   const collects = channel?.kind === "collect";
+  /** The send-money string for this exact payment, ready to dial. */
+  const dial =
+    channel?.ussd && channel.account
+      ? channel.ussd
+          .replace("{number}", channel.account.replace(/\s/g, ""))
+          .replace("{amount}", String(total))
+      : "";
 
   const copy = async (value: string, what: string) => {
     try {
@@ -409,6 +416,23 @@ export function PaymentDialog({
               )}
               <p className="mt-2 text-sm text-muted-foreground">{channel.instructions}</p>
             </div>
+
+            {/* Saves keying a ten-digit number and an amount into a USSD menu
+                on a small keypad, which is where this goes wrong. The handset
+                still shows every step and the PIN is still theirs to enter. */}
+            {dial && (
+              <a href={`tel:${encodeURIComponent(dial)}`} className="block">
+                <Button type="button" className="w-full" size="lg">
+                  <Smartphone className="size-4" /> Open my {channel.label} menu
+                </Button>
+              </a>
+            )}
+            {dial && (
+              <p className="text-center text-xs text-muted-foreground">
+                Opens the dialler with <span className="font-mono">{dial}</span> ready. Check the
+                steps on your phone before entering your PIN.
+              </p>
+            )}
 
             {channel.note && (
               <p className="flex items-start gap-2 rounded-lg border border-warning/40 bg-warning-soft/40 p-3 text-xs">
