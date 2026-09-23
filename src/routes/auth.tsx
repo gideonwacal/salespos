@@ -129,13 +129,16 @@ function AuthPage() {
           </Link>
           <div className="space-y-4 rounded-2xl border border-white/15 bg-sidebar/40 p-6 backdrop-blur-md">
             <h2 className="max-w-md text-3xl font-extrabold leading-tight text-sidebar-accent-foreground">
-              Run the shop floor and the back office from one screen.
+              Run the business and the back office from one screen.
             </h2>
+            {/* Every line has to be true of a pharmacy, a hardware store and a
+                clinic as much as a wholesaler — the trade is chosen at sign-up,
+                and the page before it should not assume one. */}
             <ul className="space-y-2 text-sm text-sidebar-foreground/85">
-              <li>• Fast retail & wholesale checkout with tiered pricing</li>
-              <li>• Credit, debtor and bottle-deposit tracking</li>
-              <li>• Live stock, expiry and low-stock alerts</li>
-              <li>• End-of-day reconciliation and P&L reports</li>
+              <li>• Fast counter sales with retail, wholesale and trade pricing</li>
+              <li>• Credit customers, debtors and what each one still owes</li>
+              <li>• Live stock with batch, expiry and reorder alerts</li>
+              <li>• End-of-day reconciliation and profit reports</li>
             </ul>
           </div>
           <p className="text-xs text-sidebar-foreground/60">{APP.tagline}</p>

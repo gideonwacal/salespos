@@ -58,12 +58,12 @@ export const Route = createFileRoute("/_authenticated/pos")({
       { title: "POS Terminal — SalesPos" },
       {
         name: "description",
-        content: "Fast wholesale and retail checkout terminal for your shop floor.",
+        content: "Fast checkout terminal for your counter, whatever you sell.",
       },
       { property: "og:title", content: "POS Terminal — SalesPos" },
       {
         property: "og:description",
-        content: "Fast wholesale and retail checkout terminal for your shop floor.",
+        content: "Fast checkout terminal for your counter, whatever you sell.",
       },
     ],
   }),

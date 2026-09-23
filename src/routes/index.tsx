@@ -13,13 +13,13 @@ export const Route = createFileRoute("/")({
       {
         name: "description",
         content:
-          "SalesPos gives any wholesale or retail business real-time POS, stock control, credit tracking and profit reporting.",
+          "SalesPos gives any business — shop, pharmacy, hardware, clinic or supermarket — real-time POS, stock control, credit tracking and profit reporting.",
       },
       { property: "og:title", content: "SalesPos — POS, Inventory & Financial Control" },
       {
         property: "og:description",
         content:
-          "SalesPos gives any wholesale or retail business real-time POS, stock control, credit tracking and profit reporting.",
+          "SalesPos gives any business — shop, pharmacy, hardware, clinic or supermarket — real-time POS, stock control, credit tracking and profit reporting.",
       },
     ],
   }),
@@ -48,11 +48,12 @@ function Index() {
         </div>
 
         <h2 className="mt-12 max-w-3xl text-4xl font-extrabold leading-tight md:text-5xl">
-          One live ledger for your shop floor and your back office.
+          One live ledger for your business and your back office.
         </h2>
         <p className="mt-4 max-w-2xl text-brand-foreground/75">
-          Record wholesale and retail sales, log stock arrivals and overheads, and watch
-          profit, stock value and reorder alerts update in real time — from any location.
+          Shop, pharmacy, hardware store, clinic or supermarket — record every sale, log
+          stock arrivals and overheads, and watch profit, stock value and reorder alerts
+          update in real time, from any location.
         </p>
 
 
@@ -64,7 +65,11 @@ function Index() {
 
         <div className="mt-16 grid gap-4 sm:grid-cols-3">
           {[
-            { icon: ScanBarcode, title: "Fast POS", body: "Wholesale/retail pricing toggle, cash, MoMo, bank or credit." },
+            {
+              icon: ScanBarcode,
+              title: "Fast POS",
+              body: "Retail, wholesale and trade pricing. Cash, MoMo, bank or credit.",
+            },
             { icon: LineChart, title: "Live P&L", body: "Revenue minus COGS minus overheads, updated per sale." },
             { icon: ShieldCheck, title: "Role control", body: "Owner sets prices and approves expenses; staff sell and log." },
           ].map((f) => (
