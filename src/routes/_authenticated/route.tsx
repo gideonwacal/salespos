@@ -12,6 +12,9 @@ import { AppShell } from "@/components/AppShell";
 const ROUTE_MODULES: [string, ModuleId][] = [
   ["/pos", "pos"],
   ["/inventory", "inventory"],
+  ["/stocktake", "inventory"],
+  ["/expiry", "inventory"],
+  ["/sections", "reports"],
   ["/quotations", "quotations"],
   ["/debtors", "debtors"],
   ["/expenses", "expenses"],

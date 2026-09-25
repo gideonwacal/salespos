@@ -18,6 +18,8 @@ import {
   CreditCard,
   FileText,
   FileSpreadsheet,
+  CalendarClock,
+  Layers,
 } from "lucide-react";
 import { isDemo, stopDemo, subscribeStore, planById, canUseModule, trialStatus, type ModuleId } from "@/lib/demo";
 import { startTour } from "@/lib/tour";
@@ -27,6 +29,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { VerifyBanner } from "@/components/VerifyBanner";
 import { useBusiness } from "@/hooks/useBusiness";
 import { useIndustry } from "@/hooks/useIndustry";
+import { hasFeature, type ProductFeature } from "@/lib/industry";
 import { APP, money } from "@/lib/format";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -39,10 +42,38 @@ const NAV: {
   owner: boolean;
   manager: boolean;
   module?: ModuleId;
+  /** Only show this page when the profile switches the field on. A hardware
+      store has no expiry dates, so an expiry watch is noise on its sidebar. */
+  feature?: ProductFeature;
 }[] = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, owner: true, manager: false },
   { to: "/pos", label: "POS Terminal", icon: ScanBarcode, owner: false, manager: true, module: "pos" },
   { to: "/inventory", label: "Inventory", icon: Package, owner: false, manager: true, module: "inventory" },
+  {
+    to: "/stocktake",
+    label: "Stock take",
+    icon: ClipboardList,
+    owner: true,
+    manager: true,
+    module: "inventory",
+  },
+  {
+    to: "/expiry",
+    label: "Expiry & batches",
+    icon: CalendarClock,
+    owner: true,
+    manager: true,
+    module: "inventory",
+    feature: "expiry",
+  },
+  {
+    to: "/sections",
+    label: "Takings by section",
+    icon: Layers,
+    owner: true,
+    manager: false,
+    module: "reports",
+  },
   { to: "/quotations", label: "Quotations", icon: FileText, owner: true, manager: true, module: "quotations" },
   { to: "/debtors", label: "Credit & Debtors", icon: HandCoins, owner: true, manager: true, module: "debtors" },
   { to: "/expenses", label: "Expenses", icon: Receipt, owner: false, manager: true, module: "expenses" },
@@ -89,8 +120,16 @@ export function AppShell({ children }: { children: ReactNode }) {
   const inPlan = (m?: ModuleId) => !m || canUseModule(business, m);
   const items = (demo ? NAV : NAV.filter((n) => (isOwner ? n.owner : n.manager)))
     .filter((n) => inPlan(n.module))
-    // A pharmacy calls it the Dispensary, a hardware store just Stock.
-    .map((n) => (n.to === "/inventory" ? { ...n, label: industry.terms.inventory } : n));
+    .filter((n) => !n.feature || hasFeature(industry, n.feature))
+    // A pharmacy calls it the Dispensary, a hardware store just Stock; and a
+    // supermarket counts departments where a pharmacy counts drug classes.
+    .map((n) =>
+      n.to === "/inventory"
+        ? { ...n, label: industry.terms.inventory }
+        : n.to === "/sections"
+          ? { ...n, label: `Takings by ${industry.terms.category.toLowerCase()}` }
+          : n,
+    );
 
   useEffect(() => {
     if (demo) setTimeout(() => startTour(), 700);

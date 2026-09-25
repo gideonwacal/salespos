@@ -25,6 +25,9 @@ import { Route as AuthenticatedReportsRouteImport } from './routes/_authenticate
 import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
 import { Route as AuthenticatedSetupRouteImport } from './routes/_authenticated/setup'
 import { Route as AuthenticatedStaffRouteImport } from './routes/_authenticated/staff'
+import { Route as AuthenticatedStocktakeRouteImport } from './routes/_authenticated/stocktake'
+import { Route as AuthenticatedExpiryRouteImport } from './routes/_authenticated/expiry'
+import { Route as AuthenticatedSectionsRouteImport } from './routes/_authenticated/sections'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -105,6 +108,21 @@ const AuthenticatedStaffRoute = AuthenticatedStaffRouteImport.update({
   path: '/staff',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedStocktakeRoute = AuthenticatedStocktakeRouteImport.update({
+  id: '/stocktake',
+  path: '/stocktake',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedExpiryRoute = AuthenticatedExpiryRouteImport.update({
+  id: '/expiry',
+  path: '/expiry',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedSectionsRoute = AuthenticatedSectionsRouteImport.update({
+  id: '/sections',
+  path: '/sections',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -122,6 +140,9 @@ export interface FileRoutesByFullPath {
   '/settings': typeof AuthenticatedSettingsRoute
   '/setup': typeof AuthenticatedSetupRoute
   '/staff': typeof AuthenticatedStaffRoute
+  '/stocktake': typeof AuthenticatedStocktakeRoute
+  '/expiry': typeof AuthenticatedExpiryRoute
+  '/sections': typeof AuthenticatedSectionsRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -139,6 +160,9 @@ export interface FileRoutesByTo {
   '/settings': typeof AuthenticatedSettingsRoute
   '/setup': typeof AuthenticatedSetupRoute
   '/staff': typeof AuthenticatedStaffRoute
+  '/stocktake': typeof AuthenticatedStocktakeRoute
+  '/expiry': typeof AuthenticatedExpiryRoute
+  '/sections': typeof AuthenticatedSectionsRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -158,6 +182,9 @@ export interface FileRoutesById {
   '/_authenticated/settings': typeof AuthenticatedSettingsRoute
   '/_authenticated/setup': typeof AuthenticatedSetupRoute
   '/_authenticated/staff': typeof AuthenticatedStaffRoute
+  '/_authenticated/stocktake': typeof AuthenticatedStocktakeRoute
+  '/_authenticated/expiry': typeof AuthenticatedExpiryRoute
+  '/_authenticated/sections': typeof AuthenticatedSectionsRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -177,6 +204,9 @@ export interface FileRouteTypes {
     | '/settings'
     | '/setup'
     | '/staff'
+    | '/stocktake'
+    | '/expiry'
+    | '/sections'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -194,6 +224,9 @@ export interface FileRouteTypes {
     | '/settings'
     | '/setup'
     | '/staff'
+    | '/stocktake'
+    | '/expiry'
+    | '/sections'
   id:
     | '__root__'
     | '/'
@@ -212,6 +245,9 @@ export interface FileRouteTypes {
     | '/_authenticated/settings'
     | '/_authenticated/setup'
     | '/_authenticated/staff'
+    | '/_authenticated/stocktake'
+    | '/_authenticated/expiry'
+    | '/_authenticated/sections'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -335,6 +371,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedStaffRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/stocktake': {
+      id: '/_authenticated/stocktake'
+      path: '/stocktake'
+      fullPath: '/stocktake'
+      preLoaderRoute: typeof AuthenticatedStocktakeRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/expiry': {
+      id: '/_authenticated/expiry'
+      path: '/expiry'
+      fullPath: '/expiry'
+      preLoaderRoute: typeof AuthenticatedExpiryRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/sections': {
+      id: '/_authenticated/sections'
+      path: '/sections'
+      fullPath: '/sections'
+      preLoaderRoute: typeof AuthenticatedSectionsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
   }
 }
 
@@ -351,6 +408,9 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRoute
   AuthenticatedSetupRoute: typeof AuthenticatedSetupRoute
   AuthenticatedStaffRoute: typeof AuthenticatedStaffRoute
+  AuthenticatedStocktakeRoute: typeof AuthenticatedStocktakeRoute
+  AuthenticatedExpiryRoute: typeof AuthenticatedExpiryRoute
+  AuthenticatedSectionsRoute: typeof AuthenticatedSectionsRoute
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
@@ -366,6 +426,9 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedSettingsRoute: AuthenticatedSettingsRoute,
   AuthenticatedSetupRoute: AuthenticatedSetupRoute,
   AuthenticatedStaffRoute: AuthenticatedStaffRoute,
+  AuthenticatedStocktakeRoute: AuthenticatedStocktakeRoute,
+  AuthenticatedExpiryRoute: AuthenticatedExpiryRoute,
+  AuthenticatedSectionsRoute: AuthenticatedSectionsRoute,
 }
 
 const AuthenticatedRouteRouteWithChildren =
