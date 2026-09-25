@@ -125,7 +125,13 @@ export async function signIn(email: string, password: string) {
 /* types                                                               */
 /* ------------------------------------------------------------------ */
 
-export type BusinessState = "trial" | "paying" | "expired" | "free" | "suspended";
+export type BusinessState =
+  | "unreviewed"
+  | "trial"
+  | "paying"
+  | "expired"
+  | "free"
+  | "suspended";
 export type Access = "standard" | "free" | "suspended";
 export type PaymentStatus = "pending" | "approved" | "rejected";
 
@@ -188,6 +194,9 @@ export type BusinessRow = {
   paid_until: string | null;
   members: number;
   last_activity: string | null;
+  /** Null until somebody at the platform has looked at this business. */
+  reviewed_at: string | null;
+  email: string;
   created_at: string;
 };
 
@@ -256,6 +265,10 @@ export const api = {
   businesses: (params: { search?: string; state?: string } = {}) =>
     call<BusinessRow[]>(`/console/businesses/${qs(params)}`),
   business: (id: string) => call<BusinessDetail>(`/console/businesses/${id}/`),
+  reviewBusiness: (id: string) =>
+    call<{ id: string; reviewed_at: string }>(`/console/businesses/${id}/review/`, {
+      method: "POST",
+    }),
   updateBusiness: (id: string, patch: BusinessPatch) =>
     call<BusinessDetail>(`/console/businesses/${id}/`, {
       method: "PATCH",

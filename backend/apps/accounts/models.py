@@ -141,6 +141,16 @@ class Workspace(models.Model):
     plan = models.CharField(max_length=20, choices=PLAN_CHOICES, default="starter")
     access = models.CharField(max_length=20, choices=ACCESS_CHOICES, default="standard")
     access_note = models.CharField(max_length=255, blank=True, default="")
+
+    # Has a human at the platform looked at this business yet? Every new
+    # registration starts unreviewed and shows up in the Control Room until
+    # somebody does. It gates nothing on its own — a business that signs up at
+    # midnight should not wait for anyone to wake up — but it is the list that
+    # makes sure no business is ever running here unnoticed.
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    reviewed_by = models.ForeignKey(
+        "User", on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+    )
     trial_ends = models.DateTimeField(default=default_trial_ends)
     subscribed = models.BooleanField(default=False)
     paid_until = models.DateTimeField(null=True, blank=True)

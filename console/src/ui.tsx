@@ -97,6 +97,8 @@ export function Tag({ children, className }: { children: ReactNode; className?: 
 const Dot = () => <span className="size-1.5 rounded-full bg-current" />;
 
 const STATE: Record<BusinessState, [string, string]> = {
+  // First in the list because it is the one that wants doing something about.
+  unreviewed: ["Needs review", "border-info/60 text-info"],
   trial: ["On trial", "border-warn/40 text-warn"],
   paying: ["Paying", "border-ok/40 text-ok"],
   expired: ["Trial ended", "border-line text-dim"],

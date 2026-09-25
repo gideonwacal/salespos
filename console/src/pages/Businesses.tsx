@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
 import { ago, date, planName } from "../format";
 import { go, Link } from "../router";
@@ -13,6 +13,16 @@ export function Businesses({ query }: { query: URLSearchParams }) {
   const { data = [], isLoading } = useQuery({
     queryKey: ["businesses", state, search],
     queryFn: () => api.businesses({ state, search }),
+  });
+
+  // Marking one seen takes it off the queue, so the list is what is left to do.
+  const queryClient = useQueryClient();
+  const review = useMutation({
+    mutationFn: (id: string) => api.reviewBusiness(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["businesses"] });
+      queryClient.invalidateQueries({ queryKey: ["overview"] });
+    },
   });
 
   return (
@@ -41,6 +51,7 @@ export function Businesses({ query }: { query: URLSearchParams }) {
           onChange={(e) => go("/businesses", { search, state: e.target.value || undefined })}
         >
           <option value="">All businesses</option>
+          <option value="unreviewed">Needs review</option>
           <option value="trial">On trial</option>
           <option value="paying">Paying</option>
           <option value="expired">Trial ended, unpaid</option>
@@ -51,10 +62,20 @@ export function Businesses({ query }: { query: URLSearchParams }) {
 
       <Panel flush>
         <Table
-          head={["Business", "Owner", "Status", "Plan", "Until", "Staff", "Last active", "Joined"]}
+          head={[
+            "Business",
+            "Owner",
+            "Status",
+            "Plan",
+            "Until",
+            "Staff",
+            "Last active",
+            "Joined",
+            "",
+          ]}
         >
-          {isLoading && <Empty colSpan={8}>loading…</Empty>}
-          {!isLoading && data.length === 0 && <Empty colSpan={8}>No businesses match.</Empty>}
+          {isLoading && <Empty colSpan={9}>loading…</Empty>}
+          {!isLoading && data.length === 0 && <Empty colSpan={9}>No businesses match.</Empty>}
           {data.map((b) => (
             <tr key={b.id}>
               <td>
@@ -82,6 +103,18 @@ export function Businesses({ query }: { query: URLSearchParams }) {
                 {ago(b.last_activity)}
               </td>
               <td className="whitespace-nowrap font-mono text-xs text-dim">{date(b.created_at)}</td>
+              <td className="text-right">
+                {b.reviewed_at === null && (
+                  <button
+                    type="button"
+                    disabled={review.isPending}
+                    onClick={() => review.mutate(b.id)}
+                    className="whitespace-nowrap rounded border border-info/50 px-2 py-1 text-xs text-info transition-colors hover:bg-info/10 disabled:opacity-50"
+                  >
+                    Mark reviewed
+                  </button>
+                )}
+              </td>
             </tr>
           ))}
         </Table>

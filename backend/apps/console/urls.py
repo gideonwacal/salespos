@@ -10,6 +10,11 @@ urlpatterns = [
         views.BusinessDetailView.as_view(),
         name="console-business",
     ),
+    path(
+        "console/businesses/<uuid:pk>/review/",
+        views.BusinessReviewView.as_view(),
+        name="console-business-review",
+    ),
     path("console/users/", views.UserListView.as_view(), name="console-users"),
     path("console/users/<uuid:pk>/", views.UserDetailView.as_view(), name="console-user"),
     path("console/payments/", views.PaymentListView.as_view(), name="console-payments"),

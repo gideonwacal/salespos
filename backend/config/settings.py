@@ -330,10 +330,18 @@ if EMAIL_HOST:
 else:
     EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
 
-# Whether a new owner must confirm their address before the shop opens. Off
-# switches the whole check, for a deployment that has no mail server and does
-# not want one.
-REQUIRE_EMAIL_VERIFICATION = os.environ.get("REQUIRE_EMAIL_VERIFICATION", "1") != "0"
+# Whether a new owner must confirm their address before the shop opens.
+#
+# Off by default, because it is only as good as the mail server behind it and
+# there may not be one. With no SMTP host, turning this on means every new
+# business signs up into a locked shop waiting for a message that will never
+# arrive — worse than not checking at all. Set it to 1 once mail works.
+#
+# What replaces it is a person: every new business lands in the Control Room
+# unreviewed, with its name, trade, phone and owner, and the platform owner
+# looks at it. That is a stronger check than an email round trip — an address
+# proves someone can read a mailbox, not that the business exists.
+REQUIRE_EMAIL_VERIFICATION = os.environ.get("REQUIRE_EMAIL_VERIFICATION", "0") != "0"
 
 # Rate limits on the billing endpoints: enough for a real shop, too few to
 # scrape the payment number or flood the admin with made-up transaction IDs.

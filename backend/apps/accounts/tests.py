@@ -19,6 +19,7 @@ from apps.accounts.models import (
     Workspace,
 )
 from apps.accounts import momo
+from apps.console.models import ActivityLog
 from apps.inventory.models import Product
 
 
@@ -828,3 +829,86 @@ class EmailVerificationTests(APITestCase):
 
         response = self.client.get("/api/products/", HTTP_X_WORKSPACE=str(workspace.id))
         self.assertEqual(response.status_code, 200)
+
+
+class NewBusinessReviewTests(APITestCase):
+    """Every new business is seen by a person; none of them waits to be."""
+
+    def setUp(self):
+        self.platform = User.objects.create_superuser(
+            email="platform@salespos.app", password="sup3rsecret!"
+        )
+
+    def register(self, email="new@shop.com"):
+        return self.client.post(
+            "/api/auth/register/",
+            {
+                "email": email,
+                "password": "sup3rsecret!",
+                "full_name": "New Owner",
+                "business_name": "New Shop",
+                "phone": "0771 234 567",
+            },
+            format="json",
+        )
+
+    def test_a_new_business_starts_unreviewed_but_trades_at_once(self):
+        """Signing up at midnight must not wait for anyone to wake up."""
+        self.register()
+        user = User.objects.get(email="new@shop.com")
+        workspace = Membership.objects.get(user=user).workspace
+        self.assertIsNone(workspace.reviewed_at)
+
+        self.client.force_authenticate(user=user)
+        response = self.client.get("/api/products/", HTTP_X_WORKSPACE=str(workspace.id))
+        self.assertEqual(response.status_code, 200)
+
+    def test_it_shows_up_in_the_console_as_needing_review(self):
+        self.register()
+        self.client.force_authenticate(user=self.platform)
+
+        listed = self.client.get("/api/console/businesses/?state=unreviewed")
+        self.assertEqual(listed.status_code, 200)
+        self.assertEqual([row["name"] for row in listed.data], ["New Shop"])
+        # Enough on the row to judge it without opening anything.
+        self.assertEqual(listed.data[0]["owner"], "new@shop.com")
+
+    def test_reviewing_takes_it_off_the_queue(self):
+        self.register()
+        workspace = Workspace.objects.get(name="New Shop")
+        self.client.force_authenticate(user=self.platform)
+
+        reviewed = self.client.post(f"/api/console/businesses/{workspace.id}/review/")
+        self.assertEqual(reviewed.status_code, 200)
+
+        workspace.refresh_from_db()
+        self.assertIsNotNone(workspace.reviewed_at)
+        self.assertEqual(workspace.reviewed_by, self.platform)
+
+        left = self.client.get("/api/console/businesses/?state=unreviewed")
+        self.assertEqual(list(left.data), [])
+
+    def test_only_the_platform_owner_can_review(self):
+        self.register()
+        workspace = Workspace.objects.get(name="New Shop")
+        shop_owner = User.objects.get(email="new@shop.com")
+
+        self.client.force_authenticate(user=shop_owner)
+        response = self.client.post(f"/api/console/businesses/{workspace.id}/review/")
+        self.assertIn(response.status_code, (403, 404))
+
+        workspace.refresh_from_db()
+        self.assertIsNone(workspace.reviewed_at)
+
+    def test_reviewing_twice_keeps_one_record(self):
+        self.register()
+        workspace = Workspace.objects.get(name="New Shop")
+        self.client.force_authenticate(user=self.platform)
+
+        self.client.post(f"/api/console/businesses/{workspace.id}/review/")
+        entries = ActivityLog.objects.filter(action="reviewed a new business").count()
+        self.client.post(f"/api/console/businesses/{workspace.id}/review/")
+
+        self.assertEqual(
+            ActivityLog.objects.filter(action="reviewed a new business").count(), entries
+        )

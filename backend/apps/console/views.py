@@ -55,6 +55,10 @@ def limit_offset(request, default=50, maximum=500):
 
 
 def billing_state(workspace, now):
+    # Unreviewed comes first on purpose: a business nobody has looked at is the
+    # thing to act on, whatever its trial says.
+    if workspace.reviewed_at is None:
+        return "unreviewed"
     if workspace.access == "suspended":
         return "suspended"
     if workspace.access == "free":
@@ -195,10 +199,40 @@ class BusinessListView(ConsoleView):
                     "paid_until": iso(workspace.paid_until),
                     "members": workspace.member_count,
                     "last_activity": iso(last_seen.get(workspace.id)),
+                    "reviewed_at": iso(workspace.reviewed_at),
+                    "email": workspace.email,
                     "created_at": iso(workspace.created_at),
                 }
             )
         return Response(rows)
+
+
+class BusinessReviewView(ConsoleView):
+    """POST /api/console/businesses/<id>/review/ — "I have looked at this one."
+
+    Deliberately not an approval: the business was never held waiting for it.
+    It is a record that somebody at the platform has seen the shop, checked the
+    name and the phone number, and is content to have it here — which is the
+    check an email round trip was never really doing.
+    """
+
+    def post(self, request, pk):
+        workspace = get_object_or_404(Workspace, pk=pk)
+        first_time = workspace.reviewed_at is None
+
+        workspace.reviewed_at = timezone.now()
+        workspace.reviewed_by = request.user
+        workspace.save(update_fields=["reviewed_at", "reviewed_by"])
+
+        if first_time:
+            ActivityLog.record(
+                request,
+                "reviewed a new business",
+                workspace=workspace,
+                target=workspace.name,
+                by_platform=True,
+            )
+        return Response({"id": str(workspace.id), "reviewed_at": iso(workspace.reviewed_at)})
 
 
 class BusinessDetailView(ConsoleView):
@@ -228,6 +262,8 @@ class BusinessDetailView(ConsoleView):
             "trial_ends": iso(workspace.trial_ends),
             "paid_until": iso(workspace.paid_until),
             "configured": workspace.configured,
+            "reviewed_at": iso(workspace.reviewed_at),
+            "reviewed_by": workspace.reviewed_by.email if workspace.reviewed_by else None,
             "created_at": iso(workspace.created_at),
             "stats": {
                 "sales": sales.count(),
