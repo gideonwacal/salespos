@@ -166,8 +166,13 @@ class MeSerializer(serializers.Serializer):
     workspaces = serializers.SerializerMethodField()
     active_workspace = serializers.SerializerMethodField()
     role = serializers.CharField(allow_null=True)
+    platform = serializers.BooleanField(default=False)
 
     def get_workspaces(self, obj):
+        # For the platform owner this is every business; for everyone else it
+        # is the ones they belong to. Either way it is "what you may open".
+        if obj.get("platform"):
+            return WorkspaceSerializer(obj.get("all_workspaces", []), many=True).data
         return WorkspaceSerializer(
             [m.workspace for m in obj["memberships"]], many=True
         ).data

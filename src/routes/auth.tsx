@@ -66,8 +66,15 @@ function AuthPage() {
   const doSignIn = async () => {
     setBusy(true);
     try {
-      await authSignIn(signIn.email.trim(), signIn.password);
+      const signedIn = await authSignIn(signIn.email.trim(), signIn.password);
       toast.success("Welcome back");
+      // The platform owner has no shop of their own, so there is no dashboard
+      // to land on — they are asked which of the two jobs this is.
+      if (signedIn.platform) {
+        refresh();
+        navigate({ to: "/platform", replace: true });
+        return;
+      }
       afterAuth();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not sign in");

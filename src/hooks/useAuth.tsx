@@ -18,6 +18,8 @@ type AuthValue = {
   role: AppRole | null;
   fullName: string;
   isOwner: boolean;
+  /** The platform owner: no shop of their own, every shop to choose from. */
+  isPlatform: boolean;
   /** An owner who has not confirmed their address yet: signed in, but held. */
   needsVerification: boolean;
   demo: boolean;
@@ -34,6 +36,7 @@ const AuthContext = createContext<AuthValue>({
   role: null,
   fullName: "",
   isOwner: false,
+  isPlatform: false,
   needsVerification: false,
   demo: false,
   live: false,
@@ -46,6 +49,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<SessionUser | null>(null);
   const [demo, setDemo] = useState(false);
   const [live, setLive] = useState(false);
+  const [platform, setPlatform] = useState(false);
   const [loading, setLoading] = useState(true);
 
   const refresh = () => {
@@ -71,6 +75,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           // is what puts the owner's logo, tagline and receipt footer in front
           // of the salesperson — otherwise they'd keep whatever was current the
           // day they signed in.
+          setPlatform(!!me.platform);
+          // Signed in but standing nowhere: the chooser is the only screen
+          // that makes sense, and the guard sends them there.
           if (me.active_workspace) {
             mergeServerBusiness(businessFrom(me.active_workspace));
           }
@@ -114,6 +121,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         role: user?.role ?? null,
         fullName: user?.full_name ?? "",
         isOwner: user?.role === "owner",
+        isPlatform: platform,
         // Only ever asked of an owner. A cashier was vouched for by whoever
         // created their login and has no address of their own on file.
         needsVerification: user?.role === "owner" && user?.email_verified === false,

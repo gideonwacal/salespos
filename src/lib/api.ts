@@ -221,11 +221,19 @@ export async function register(input: {
   return data;
 }
 
+/** Where the Control Room is served from, for the platform owner's link into it. */
+export const CONSOLE_URL = (import.meta.env.VITE_CONSOLE_URL ?? "http://localhost:8090").replace(
+  /\/$/,
+  "",
+);
+
 export type MeResponse = {
   user: ApiUser;
   workspaces: ApiWorkspace[];
   active_workspace: ApiWorkspace | null;
   role: "owner" | "manager" | null;
+  /** True for the platform owner: no shop of their own, every shop to choose from. */
+  platform?: boolean;
 };
 
 export function fetchMe() {

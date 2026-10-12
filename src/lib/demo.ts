@@ -1034,6 +1034,8 @@ export type SessionUser = {
   role: AppRole;
   /** Owners only, and only on a live session. Absent means nothing to confirm. */
   email_verified?: boolean;
+  /** The platform owner: no shop of their own, every shop to choose from. */
+  platform?: boolean;
 };
 
 export function getSessionUser(): SessionUser | null {

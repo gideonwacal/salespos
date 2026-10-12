@@ -67,6 +67,7 @@ export async function signIn(email: string, password: string): Promise<SessionUs
       email: me.user.email,
       full_name: me.user.full_name,
       role: me.role ?? "manager",
+      platform: !!me.platform,
     };
 
     const workspace = me.active_workspace;

@@ -169,6 +169,13 @@ class MeView(APIView):
             "memberships": memberships,
             "active_workspace": workspace,
             "role": role,
+            # The platform owner belongs to no shop, so the list the app offers
+            # them is every shop. Anyone else sees only what they are a member
+            # of, which is what `memberships` already is.
+            "platform": request.user.is_superuser,
+            "all_workspaces": (
+                list(Workspace.objects.order_by("name")) if request.user.is_superuser else []
+            ),
         }
         return Response(MeSerializer(payload).data)
 

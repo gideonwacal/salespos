@@ -32,6 +32,18 @@ def resolve_workspace(request):
 
     requested = request.META.get(WORKSPACE_HEADER) or ""
     requested = requested.strip()
+
+    # The platform owner may stand in any business they name, without being a
+    # member of it. Deliberately not done by quietly adding them to the staff
+    # list: that list belongs to the shop, and a stranger appearing in it is
+    # the shop's problem to explain. Entering is logged where it is chosen.
+    if requested and user.is_superuser:
+        from apps.accounts.models import Workspace
+
+        workspace = Workspace.objects.filter(pk=requested).first()
+        if workspace is not None:
+            return workspace, "owner"
+
     if requested:
         membership = memberships.filter(workspace_id=requested).first()
         if membership is None:
