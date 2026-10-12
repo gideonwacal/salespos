@@ -18,17 +18,17 @@ import { Route as AuthenticatedDashboardRouteImport } from './routes/_authentica
 import { Route as AuthenticatedDataRouteImport } from './routes/_authenticated/data'
 import { Route as AuthenticatedDebtorsRouteImport } from './routes/_authenticated/debtors'
 import { Route as AuthenticatedExpensesRouteImport } from './routes/_authenticated/expenses'
+import { Route as AuthenticatedExpiryRouteImport } from './routes/_authenticated/expiry'
+import { Route as AuthenticatedFitmentRouteImport } from './routes/_authenticated/fitment'
 import { Route as AuthenticatedInventoryRouteImport } from './routes/_authenticated/inventory'
 import { Route as AuthenticatedPosRouteImport } from './routes/_authenticated/pos'
 import { Route as AuthenticatedQuotationsRouteImport } from './routes/_authenticated/quotations'
 import { Route as AuthenticatedReportsRouteImport } from './routes/_authenticated/reports'
+import { Route as AuthenticatedSectionsRouteImport } from './routes/_authenticated/sections'
 import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
 import { Route as AuthenticatedSetupRouteImport } from './routes/_authenticated/setup'
 import { Route as AuthenticatedStaffRouteImport } from './routes/_authenticated/staff'
 import { Route as AuthenticatedStocktakeRouteImport } from './routes/_authenticated/stocktake'
-import { Route as AuthenticatedExpiryRouteImport } from './routes/_authenticated/expiry'
-import { Route as AuthenticatedSectionsRouteImport } from './routes/_authenticated/sections'
-import { Route as AuthenticatedFitmentRouteImport } from './routes/_authenticated/fitment'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -74,6 +74,16 @@ const AuthenticatedExpensesRoute = AuthenticatedExpensesRouteImport.update({
   path: '/expenses',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedExpiryRoute = AuthenticatedExpiryRouteImport.update({
+  id: '/expiry',
+  path: '/expiry',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedFitmentRoute = AuthenticatedFitmentRouteImport.update({
+  id: '/fitment',
+  path: '/fitment',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthenticatedInventoryRoute = AuthenticatedInventoryRouteImport.update({
   id: '/inventory',
   path: '/inventory',
@@ -92,6 +102,11 @@ const AuthenticatedQuotationsRoute = AuthenticatedQuotationsRouteImport.update({
 const AuthenticatedReportsRoute = AuthenticatedReportsRouteImport.update({
   id: '/reports',
   path: '/reports',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedSectionsRoute = AuthenticatedSectionsRouteImport.update({
+  id: '/sections',
+  path: '/sections',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedSettingsRoute = AuthenticatedSettingsRouteImport.update({
@@ -114,21 +129,6 @@ const AuthenticatedStocktakeRoute = AuthenticatedStocktakeRouteImport.update({
   path: '/stocktake',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
-const AuthenticatedExpiryRoute = AuthenticatedExpiryRouteImport.update({
-  id: '/expiry',
-  path: '/expiry',
-  getParentRoute: () => AuthenticatedRouteRoute,
-} as any)
-const AuthenticatedSectionsRoute = AuthenticatedSectionsRouteImport.update({
-  id: '/sections',
-  path: '/sections',
-  getParentRoute: () => AuthenticatedRouteRoute,
-} as any)
-const AuthenticatedFitmentRoute = AuthenticatedFitmentRouteImport.update({
-  id: '/fitment',
-  path: '/fitment',
-  getParentRoute: () => AuthenticatedRouteRoute,
-} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -139,17 +139,17 @@ export interface FileRoutesByFullPath {
   '/data': typeof AuthenticatedDataRoute
   '/debtors': typeof AuthenticatedDebtorsRoute
   '/expenses': typeof AuthenticatedExpensesRoute
+  '/expiry': typeof AuthenticatedExpiryRoute
+  '/fitment': typeof AuthenticatedFitmentRoute
   '/inventory': typeof AuthenticatedInventoryRoute
   '/pos': typeof AuthenticatedPosRoute
   '/quotations': typeof AuthenticatedQuotationsRoute
   '/reports': typeof AuthenticatedReportsRoute
+  '/sections': typeof AuthenticatedSectionsRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/setup': typeof AuthenticatedSetupRoute
   '/staff': typeof AuthenticatedStaffRoute
   '/stocktake': typeof AuthenticatedStocktakeRoute
-  '/expiry': typeof AuthenticatedExpiryRoute
-  '/sections': typeof AuthenticatedSectionsRoute
-  '/fitment': typeof AuthenticatedFitmentRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -160,17 +160,17 @@ export interface FileRoutesByTo {
   '/data': typeof AuthenticatedDataRoute
   '/debtors': typeof AuthenticatedDebtorsRoute
   '/expenses': typeof AuthenticatedExpensesRoute
+  '/expiry': typeof AuthenticatedExpiryRoute
+  '/fitment': typeof AuthenticatedFitmentRoute
   '/inventory': typeof AuthenticatedInventoryRoute
   '/pos': typeof AuthenticatedPosRoute
   '/quotations': typeof AuthenticatedQuotationsRoute
   '/reports': typeof AuthenticatedReportsRoute
+  '/sections': typeof AuthenticatedSectionsRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/setup': typeof AuthenticatedSetupRoute
   '/staff': typeof AuthenticatedStaffRoute
   '/stocktake': typeof AuthenticatedStocktakeRoute
-  '/expiry': typeof AuthenticatedExpiryRoute
-  '/sections': typeof AuthenticatedSectionsRoute
-  '/fitment': typeof AuthenticatedFitmentRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -183,17 +183,17 @@ export interface FileRoutesById {
   '/_authenticated/data': typeof AuthenticatedDataRoute
   '/_authenticated/debtors': typeof AuthenticatedDebtorsRoute
   '/_authenticated/expenses': typeof AuthenticatedExpensesRoute
+  '/_authenticated/expiry': typeof AuthenticatedExpiryRoute
+  '/_authenticated/fitment': typeof AuthenticatedFitmentRoute
   '/_authenticated/inventory': typeof AuthenticatedInventoryRoute
   '/_authenticated/pos': typeof AuthenticatedPosRoute
   '/_authenticated/quotations': typeof AuthenticatedQuotationsRoute
   '/_authenticated/reports': typeof AuthenticatedReportsRoute
+  '/_authenticated/sections': typeof AuthenticatedSectionsRoute
   '/_authenticated/settings': typeof AuthenticatedSettingsRoute
   '/_authenticated/setup': typeof AuthenticatedSetupRoute
   '/_authenticated/staff': typeof AuthenticatedStaffRoute
   '/_authenticated/stocktake': typeof AuthenticatedStocktakeRoute
-  '/_authenticated/expiry': typeof AuthenticatedExpiryRoute
-  '/_authenticated/sections': typeof AuthenticatedSectionsRoute
-  '/_authenticated/fitment': typeof AuthenticatedFitmentRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -206,17 +206,17 @@ export interface FileRouteTypes {
     | '/data'
     | '/debtors'
     | '/expenses'
+    | '/expiry'
+    | '/fitment'
     | '/inventory'
     | '/pos'
     | '/quotations'
     | '/reports'
+    | '/sections'
     | '/settings'
     | '/setup'
     | '/staff'
     | '/stocktake'
-    | '/expiry'
-    | '/sections'
-    | '/fitment'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -227,17 +227,17 @@ export interface FileRouteTypes {
     | '/data'
     | '/debtors'
     | '/expenses'
+    | '/expiry'
+    | '/fitment'
     | '/inventory'
     | '/pos'
     | '/quotations'
     | '/reports'
+    | '/sections'
     | '/settings'
     | '/setup'
     | '/staff'
     | '/stocktake'
-    | '/expiry'
-    | '/sections'
-    | '/fitment'
   id:
     | '__root__'
     | '/'
@@ -249,17 +249,17 @@ export interface FileRouteTypes {
     | '/_authenticated/data'
     | '/_authenticated/debtors'
     | '/_authenticated/expenses'
+    | '/_authenticated/expiry'
+    | '/_authenticated/fitment'
     | '/_authenticated/inventory'
     | '/_authenticated/pos'
     | '/_authenticated/quotations'
     | '/_authenticated/reports'
+    | '/_authenticated/sections'
     | '/_authenticated/settings'
     | '/_authenticated/setup'
     | '/_authenticated/staff'
     | '/_authenticated/stocktake'
-    | '/_authenticated/expiry'
-    | '/_authenticated/sections'
-    | '/_authenticated/fitment'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -334,6 +334,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedExpensesRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/expiry': {
+      id: '/_authenticated/expiry'
+      path: '/expiry'
+      fullPath: '/expiry'
+      preLoaderRoute: typeof AuthenticatedExpiryRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/fitment': {
+      id: '/_authenticated/fitment'
+      path: '/fitment'
+      fullPath: '/fitment'
+      preLoaderRoute: typeof AuthenticatedFitmentRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/inventory': {
       id: '/_authenticated/inventory'
       path: '/inventory'
@@ -360,6 +374,13 @@ declare module '@tanstack/react-router' {
       path: '/reports'
       fullPath: '/reports'
       preLoaderRoute: typeof AuthenticatedReportsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/sections': {
+      id: '/_authenticated/sections'
+      path: '/sections'
+      fullPath: '/sections'
+      preLoaderRoute: typeof AuthenticatedSectionsRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/settings': {
@@ -390,27 +411,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedStocktakeRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
-    '/_authenticated/expiry': {
-      id: '/_authenticated/expiry'
-      path: '/expiry'
-      fullPath: '/expiry'
-      preLoaderRoute: typeof AuthenticatedExpiryRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
-    '/_authenticated/sections': {
-      id: '/_authenticated/sections'
-      path: '/sections'
-      fullPath: '/sections'
-      preLoaderRoute: typeof AuthenticatedSectionsRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
-    '/_authenticated/fitment': {
-      id: '/_authenticated/fitment'
-      path: '/fitment'
-      fullPath: '/fitment'
-      preLoaderRoute: typeof AuthenticatedFitmentRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
   }
 }
 
@@ -420,17 +420,17 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedDataRoute: typeof AuthenticatedDataRoute
   AuthenticatedDebtorsRoute: typeof AuthenticatedDebtorsRoute
   AuthenticatedExpensesRoute: typeof AuthenticatedExpensesRoute
+  AuthenticatedExpiryRoute: typeof AuthenticatedExpiryRoute
+  AuthenticatedFitmentRoute: typeof AuthenticatedFitmentRoute
   AuthenticatedInventoryRoute: typeof AuthenticatedInventoryRoute
   AuthenticatedPosRoute: typeof AuthenticatedPosRoute
   AuthenticatedQuotationsRoute: typeof AuthenticatedQuotationsRoute
   AuthenticatedReportsRoute: typeof AuthenticatedReportsRoute
+  AuthenticatedSectionsRoute: typeof AuthenticatedSectionsRoute
   AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRoute
   AuthenticatedSetupRoute: typeof AuthenticatedSetupRoute
   AuthenticatedStaffRoute: typeof AuthenticatedStaffRoute
   AuthenticatedStocktakeRoute: typeof AuthenticatedStocktakeRoute
-  AuthenticatedExpiryRoute: typeof AuthenticatedExpiryRoute
-  AuthenticatedSectionsRoute: typeof AuthenticatedSectionsRoute
-  AuthenticatedFitmentRoute: typeof AuthenticatedFitmentRoute
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
@@ -439,17 +439,17 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedDataRoute: AuthenticatedDataRoute,
   AuthenticatedDebtorsRoute: AuthenticatedDebtorsRoute,
   AuthenticatedExpensesRoute: AuthenticatedExpensesRoute,
+  AuthenticatedExpiryRoute: AuthenticatedExpiryRoute,
+  AuthenticatedFitmentRoute: AuthenticatedFitmentRoute,
   AuthenticatedInventoryRoute: AuthenticatedInventoryRoute,
   AuthenticatedPosRoute: AuthenticatedPosRoute,
   AuthenticatedQuotationsRoute: AuthenticatedQuotationsRoute,
   AuthenticatedReportsRoute: AuthenticatedReportsRoute,
+  AuthenticatedSectionsRoute: AuthenticatedSectionsRoute,
   AuthenticatedSettingsRoute: AuthenticatedSettingsRoute,
   AuthenticatedSetupRoute: AuthenticatedSetupRoute,
   AuthenticatedStaffRoute: AuthenticatedStaffRoute,
   AuthenticatedStocktakeRoute: AuthenticatedStocktakeRoute,
-  AuthenticatedExpiryRoute: AuthenticatedExpiryRoute,
-  AuthenticatedSectionsRoute: AuthenticatedSectionsRoute,
-  AuthenticatedFitmentRoute: AuthenticatedFitmentRoute,
 }
 
 const AuthenticatedRouteRouteWithChildren =

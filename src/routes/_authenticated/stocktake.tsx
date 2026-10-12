@@ -72,11 +72,13 @@ function StockTake() {
 
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return products
-      // A service has no shelf to count.
-      .filter((p) => !p.is_service)
-      .filter((p) => category === "all" || p.category === category)
-      .filter((p) => !q || p.name.toLowerCase().includes(q));
+    return (
+      products
+        // A service has no shelf to count.
+        .filter((p) => !p.is_service)
+        .filter((p) => category === "all" || p.category === category)
+        .filter((p) => !q || p.name.toLowerCase().includes(q))
+    );
   }, [products, query, category]);
 
   /** Only the rows somebody actually typed a number into, and only the ones that differ. */
@@ -139,8 +141,8 @@ function StockTake() {
         <div>
           <h1 className="text-2xl font-extrabold">Stock take</h1>
           <p className="text-sm text-muted-foreground">
-            Count what is on the shelf, type it in, and file only what differs. Every correction
-            is left in the stock ledger with the numbers behind it.
+            Count what is on the shelf, type it in, and file only what differs. Every correction is
+            left in the stock ledger with the numbers behind it.
           </p>
         </div>
         <Button disabled={!variances.length || busy} onClick={file}>
@@ -284,8 +286,7 @@ function StockTake() {
               </div>
             ))}
             <p className="pt-1 text-xs text-muted-foreground">
-              Stock that is short with no damage report behind it is the number worth asking
-              about.
+              Stock that is short with no damage report behind it is the number worth asking about.
             </p>
           </CardContent>
         </Card>

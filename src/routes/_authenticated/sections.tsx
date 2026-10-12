@@ -65,9 +65,7 @@ function Sections() {
 
   const rows = useMemo(() => {
     const chosen = RANGES.find((r) => r.id === range)!;
-    const since = chosen.days
-      ? Date.now() - chosen.days * 86400000
-      : Number.NEGATIVE_INFINITY;
+    const since = chosen.days ? Date.now() - chosen.days * 86400000 : Number.NEGATIVE_INFINITY;
 
     const totals = new Map<
       string,
@@ -78,9 +76,7 @@ function Sections() {
       if (new Date(sale.created_at).getTime() < since) continue;
       for (const line of saleLines(sale)) {
         const section = sectionOf(line.product_id);
-        const row =
-          totals.get(section) ??
-          { section, revenue: 0, cost: 0, units: 0, lines: 0 };
+        const row = totals.get(section) ?? { section, revenue: 0, cost: 0, units: 0, lines: 0 };
         row.revenue += Number(line.unit_price) * Number(line.quantity);
         row.cost += Number(line.unit_cost) * Number(line.quantity);
         row.units += Number(line.quantity);
@@ -115,7 +111,9 @@ function Sections() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-extrabold">Takings by {industry.terms.category.toLowerCase()}</h1>
+          <h1 className="text-2xl font-extrabold">
+            Takings by {industry.terms.category.toLowerCase()}
+          </h1>
           <p className="text-sm text-muted-foreground">
             What each {industry.terms.category.toLowerCase()} sold, what it cost you, and what it
             actually left behind.
@@ -236,12 +234,9 @@ function Sections() {
       {silent.length > 0 && rows.length > 0 && (
         <Card className="shadow-[var(--shadow-card)]">
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">
-              Sold nothing in this period
-            </CardTitle>
+            <CardTitle className="text-base">Sold nothing in this period</CardTitle>
             <p className="text-xs text-muted-foreground">
-              Stock sitting in these is money doing nothing. Worth knowing before the next
-              delivery.
+              Stock sitting in these is money doing nothing. Worth knowing before the next delivery.
             </p>
           </CardHeader>
           <CardContent className="flex flex-wrap gap-1.5">
@@ -262,7 +257,12 @@ function Tile({ label, value, tone }: { label: string; value: string; tone?: "su
     <Card className="shadow-[var(--shadow-card)]">
       <CardContent className="p-4">
         <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</p>
-        <p className={cn("tabular mt-1 text-xl font-extrabold", tone === "success" && "text-success")}>
+        <p
+          className={cn(
+            "tabular mt-1 text-xl font-extrabold",
+            tone === "success" && "text-success",
+          )}
+        >
           {value}
         </p>
       </CardContent>

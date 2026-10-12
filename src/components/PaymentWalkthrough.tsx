@@ -13,15 +13,7 @@
  */
 
 import { useEffect, useMemo, useState } from "react";
-import {
-  BadgeCheck,
-  Check,
-  Copy,
-  Pause,
-  Play,
-  RotateCcw,
-  Smartphone,
-} from "lucide-react";
+import { BadgeCheck, Check, Copy, Pause, Play, RotateCcw, Smartphone } from "lucide-react";
 import { planById, type PlanId } from "@/lib/demo";
 import { moneyIn } from "@/lib/format";
 import { Button } from "@/components/ui/button";

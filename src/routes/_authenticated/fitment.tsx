@@ -58,10 +58,7 @@ function Fitment() {
   const [year, setYear] = useState("");
   const [query, setQuery] = useState("");
 
-  const productById = useMemo(
-    () => new Map(products.map((p) => [p.id, p])),
-    [products],
-  );
+  const productById = useMemo(() => new Map(products.map((p) => [p.id, p])), [products]);
 
   /** Makes this shop actually stocks for, and the models under each. */
   const catalogue = useMemo(() => {
@@ -316,9 +313,12 @@ function Fitment() {
                 })}
                 {matches.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={5} className="py-8 text-center text-sm text-muted-foreground">
-                      Nothing on file fits that one. Try without the year, or check the part
-                      number with the customer.
+                    <TableCell
+                      colSpan={5}
+                      className="py-8 text-center text-sm text-muted-foreground"
+                    >
+                      Nothing on file fits that one. Try without the year, or check the part number
+                      with the customer.
                     </TableCell>
                   </TableRow>
                 )}
