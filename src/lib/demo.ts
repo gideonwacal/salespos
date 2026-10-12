@@ -14,8 +14,12 @@
  * authentication server-side when you connect a real backend.
  */
 
+import { demoTrade } from "@/lib/demoTrades";
+
 const DEMO_FLAG = "salespos-demo";
 const DEMO_STORE = "salespos-demo-data";
+/** Which trade the demo is pretending to be, so a reset keeps the same shop. */
+const DEMO_TRADE = "salespos-demo-trade";
 const LIVE_STORE = "salespos-data";
 const SESSION_KEY = "salespos-session";
 const WS_INDEX = "salespos-workspaces";
@@ -299,10 +303,16 @@ function emptyTables(business: Business, users: AccountUser[]): Tables {
     purchases: [],
     quotations: [],
     shifts: [],
+    patients: [],
+    visits: [],
+    prescriptions: [],
   };
 }
 
-function demoSeed(): Tables {
+function demoSeed(tradeId?: string): Tables {
+  // Which business the visitor said they run. Everything below shapes itself
+  // around it — the shelf, the sections, the name on the receipt.
+  const trade = demoTrade(tradeId ?? sessionStorage.getItem(DEMO_TRADE));
   const p = (
     name: string,
     category: string,
@@ -337,28 +347,45 @@ function demoSeed(): Tables {
     bulk_discount_percent: 10,
   };
 
-  const products = [
-    p("Red Grape Wine 750ml", "Alcoholic Drinks", 9000, 12000, 11000, 48, 12, glass),
-    p("Sparkling Wine 750ml", "Alcoholic Drinks", 8500, 11500, 10500, 9, 12, glass),
-    p("House Gin 200ml (Crate)", "Alcoholic Drinks", 42000, 52000, 48000, 22, 8, glass),
-    p("Premium Gin 500ml", "Alcoholic Drinks", 6000, 8500, 7800, 4, 10, glass),
-    p("Cola Soda Crate (24)", "Soft Drinks", 26000, 32000, 29000, 35, 10, {
-      ...glass,
-      expiry_date: day(45),
-    }),
-    p("Energy Drink Crate", "Soft Drinks", 30000, 38000, 35000, 6, 10, {
-      ...glass,
-      expiry_date: day(12),
-    }),
-    p("Orange Soda 300ml Crate", "Soft Drinks", 24000, 30000, 27500, 40, 12, glass),
-    p("Cooking Oil 5L", "Household Items", 32000, 39000, 36500, 18, 6, { expiry_date: day(120) }),
-    p("Bar Soap (Carton)", "Household Items", 45000, 55000, 51000, 12, 5),
-    p("Matchboxes (Pack)", "General Merchandise", 4000, 6000, 5200, 60, 20),
-    p("Sugar 50kg Bale", "General Merchandise", 190000, 215000, 205000, 7, 4),
-    p("Maize Flour 25kg Bag", "General Merchandise", 62000, 74000, 70000, 3, 6, {
-      expiry_date: day(-3),
-    }),
-  ];
+  // A trade with its own shelf uses it; wholesale keeps the hand-built one
+  // below, which carries the crates and deposits nothing else needs.
+  const products = trade.products.length
+    ? trade.products.map((item) =>
+        p(
+          item.name,
+          item.category,
+          item.buy,
+          item.sell,
+          item.wholesale,
+          item.stock,
+          item.reorder,
+          item.extra ?? {},
+        ),
+      )
+    : [
+        p("Red Grape Wine 750ml", "Alcoholic Drinks", 9000, 12000, 11000, 48, 12, glass),
+        p("Sparkling Wine 750ml", "Alcoholic Drinks", 8500, 11500, 10500, 9, 12, glass),
+        p("House Gin 200ml (Crate)", "Alcoholic Drinks", 42000, 52000, 48000, 22, 8, glass),
+        p("Premium Gin 500ml", "Alcoholic Drinks", 6000, 8500, 7800, 4, 10, glass),
+        p("Cola Soda Crate (24)", "Soft Drinks", 26000, 32000, 29000, 35, 10, {
+          ...glass,
+          expiry_date: day(45),
+        }),
+        p("Energy Drink Crate", "Soft Drinks", 30000, 38000, 35000, 6, 10, {
+          ...glass,
+          expiry_date: day(12),
+        }),
+        p("Orange Soda 300ml Crate", "Soft Drinks", 24000, 30000, 27500, 40, 12, glass),
+        p("Cooking Oil 5L", "Household Items", 32000, 39000, 36500, 18, 6, {
+          expiry_date: day(120),
+        }),
+        p("Bar Soap (Carton)", "Household Items", 45000, 55000, 51000, 12, 5),
+        p("Matchboxes (Pack)", "General Merchandise", 4000, 6000, 5200, 60, 20),
+        p("Sugar 50kg Bale", "General Merchandise", 190000, 215000, 205000, 7, 4),
+        p("Maize Flour 25kg Bag", "General Merchandise", 62000, 74000, 70000, 3, 6, {
+          expiry_date: day(-3),
+        }),
+      ];
 
   const customers = [
     {
@@ -707,10 +734,11 @@ function demoSeed(): Tables {
   }));
 
   const business = blankBusiness({
-    name: "Demo Wholesalers Ltd",
-    tagline: "Wholesale & retail general merchandise",
-    address: "12 Market Street",
-    city: "Central Town",
+    name: trade.business.name,
+    tagline: trade.business.tagline,
+    industry: trade.id,
+    address: trade.business.address,
+    city: trade.business.city,
 
     country: "Uganda",
     phone: "0700 000 000",
@@ -758,7 +786,119 @@ function demoSeed(): Tables {
     purchases,
     quotations,
     shifts,
+    ...clinical(trade.id, products),
   };
+}
+
+/**
+ * A waiting room, for the trades that have one.
+ *
+ * Without this a clinic demo opens Patients and Consultations to two empty
+ * tables, which demonstrates nothing. With it the queue has somebody in every
+ * column and one prescription still owed, which is the whole workflow on one
+ * screen.
+ */
+function clinical(tradeId: string, products: Record<string, unknown>[]) {
+  if (tradeId !== "clinic") return { patients: [], visits: [], prescriptions: [] };
+
+  const people = [
+    {
+      number: "P00001",
+      name: "Aisha Nakato",
+      sex: "female",
+      age: 29,
+      village: "Kireka",
+      allergies: "Penicillin",
+    },
+    {
+      number: "P00002",
+      name: "Joseph Okello",
+      sex: "male",
+      age: 44,
+      village: "Ntinda",
+      allergies: "",
+    },
+    {
+      number: "P00003",
+      name: "Grace Among",
+      sex: "female",
+      age: 7,
+      village: "Seeta",
+      allergies: "",
+    },
+  ].map((person) => ({
+    id: uid(),
+    patient_number: person.number,
+    full_name: person.name,
+    sex: person.sex,
+    date_of_birth: null,
+    stated_age: person.age,
+    age: person.age,
+    phone: "0771 000 000",
+    village: person.village,
+    nin: "",
+    next_of_kin_name: "",
+    next_of_kin_phone: "",
+    allergies: person.allergies,
+    notes: "",
+    visit_count: 1,
+    created_at: iso(20),
+  }));
+
+  const medicine = products.find((p) => !p.is_service) ?? products[0];
+
+  const visits = [
+    {
+      patient: people[0],
+      status: "to_dispense",
+      complaint: "Fever and headache for three days",
+      diagnosis: "Malaria",
+    },
+    { patient: people[1], status: "in_consultation", complaint: "Cough, two weeks", diagnosis: "" },
+    { patient: people[2], status: "waiting", complaint: "Stomach pain", diagnosis: "" },
+  ].map((v, i) => ({
+    id: uid(),
+    patient_id: v.patient.id,
+    patient_name: v.patient.full_name,
+    patient_number: v.patient.patient_number,
+    allergies: v.patient.allergies,
+    status: v.status,
+    complaint: v.complaint,
+    temperature: i === 0 ? "38.4" : null,
+    blood_pressure: i === 0 ? "118/76" : "",
+    pulse: i === 0 ? 92 : null,
+    weight: null,
+    examination: i === 0 ? "Alert, febrile. Chest clear." : "",
+    diagnosis: v.diagnosis,
+    treatment_plan: "",
+    closed_at: null,
+    prescriptions: [],
+    created_at: iso(0),
+  }));
+
+  // One order still owed, so the dispensing half of the workflow has something
+  // waiting on it rather than a tidy empty list.
+  const prescriptions = [
+    {
+      id: uid(),
+      visit_id: visits[0].id,
+      patient_id: people[0].id,
+      product_id: medicine?.id ?? null,
+      medicine: String(medicine?.name ?? "Coartem 20/120"),
+      dose: "4 tablets",
+      frequency: "twice daily",
+      duration: "3 days",
+      instructions: "After food",
+      quantity_ordered: 24,
+      quantity_dispensed: 0,
+      outstanding: 24,
+      dispensed_at: null,
+      created_at: iso(0),
+    },
+  ];
+  visits[0].prescriptions = prescriptions as never[];
+
+  return { patients: people, visits, prescriptions };
 }
 
 /* ------------------------------------------------------------------ */
@@ -859,14 +999,16 @@ function save(tables: Tables) {
 /* demo lifecycle                                                      */
 /* ------------------------------------------------------------------ */
 
-export function startDemo() {
+export function startDemo(trade = "wholesale") {
   sessionStorage.setItem(DEMO_FLAG, "1");
-  sessionStorage.setItem(DEMO_STORE, JSON.stringify(demoSeed()));
+  sessionStorage.setItem(DEMO_TRADE, trade);
+  sessionStorage.setItem(DEMO_STORE, JSON.stringify(demoSeed(trade)));
 }
 
 export function stopDemo() {
   sessionStorage.removeItem(DEMO_FLAG);
   sessionStorage.removeItem(DEMO_STORE);
+  sessionStorage.removeItem(DEMO_TRADE);
   emit();
 }
 

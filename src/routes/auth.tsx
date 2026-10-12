@@ -3,6 +3,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { Store, PlayCircle } from "lucide-react";
 import { startDemo, getBusiness } from "@/lib/demo";
+import { DEMO_TRADES } from "@/lib/demoTrades";
 import { signIn as authSignIn, signUp as authSignUp } from "@/lib/auth";
 import type { MeResponse } from "@/lib/api";
 import { useAuth } from "@/hooks/useAuth";
@@ -112,8 +113,13 @@ function AuthPage() {
     }
   };
 
-  const demo = () => {
-    startDemo();
+  // Which trade the visitor wants to see. A wholesaler's crates tell a
+  // pharmacist nothing, and the first thing anybody does with a demo is look
+  // for their own stock on the shelf.
+  const [tradeOpen, setTradeOpen] = useState(false);
+
+  const demo = (trade: string) => {
+    startDemo(trade);
     window.location.href = "/pos";
   };
 
@@ -272,12 +278,40 @@ function AuthPage() {
             </Tabs>
 
             <div className="mt-5 border-t border-border pt-4">
-              <Button variant="outline" className="w-full" onClick={demo}>
-                <PlayCircle className="size-4" /> Try demo mode
-              </Button>
-              <p className="mt-2 text-center text-xs text-muted-foreground">
-                Loaded with sample stock, sales and debtors. Nothing is saved.
-              </p>
+              {!tradeOpen ? (
+                <>
+                  <Button variant="outline" className="w-full" onClick={() => setTradeOpen(true)}>
+                    <PlayCircle className="size-4" /> Try demo mode
+                  </Button>
+                  <p className="mt-2 text-center text-xs text-muted-foreground">
+                    Loaded with sample stock, sales and debtors. Nothing is saved.
+                  </p>
+                </>
+              ) : (
+                <div className="space-y-2">
+                  <p className="text-center text-sm font-semibold">Which business do you run?</p>
+                  <div className="grid gap-1.5">
+                    {DEMO_TRADES.map((t) => (
+                      <button
+                        key={t.id}
+                        type="button"
+                        onClick={() => demo(t.id)}
+                        className="rounded-lg border border-border p-2.5 text-left transition-colors hover:border-primary"
+                      >
+                        <span className="block text-sm font-semibold">{t.label}</span>
+                        <span className="block text-[11px] text-muted-foreground">{t.blurb}</span>
+                      </button>
+                    ))}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setTradeOpen(false)}
+                    className="w-full text-center text-xs text-muted-foreground underline"
+                  >
+                    Never mind
+                  </button>
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>
