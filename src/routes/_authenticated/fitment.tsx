@@ -14,7 +14,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { Car, MapPin, PackageSearch, Search } from "lucide-react";
-import { useProducts, useVehicleFits } from "@/lib/data";
+import { useProducts, useVehicleFits, type Product, type VehicleFit } from "@/lib/data";
 import { useIndustry } from "@/hooks/useIndustry";
 import { ugx, num } from "@/lib/format";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -30,6 +30,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
+
+/** A part that fits the chosen vehicle, with every fitment that said so. */
+type Match = { product: Product; fits: VehicleFit[] };
 
 export const Route = createFileRoute("/_authenticated/fitment")({
   head: () => ({
@@ -81,36 +84,39 @@ function Fitment() {
     const wantedYear = /^\d{4}$/.test(year) ? Number(year) : null;
     const q = query.trim().toLowerCase();
 
-    const rows = fits
-      .filter((f) => f.make === make)
-      .filter((f) => !model || f.model === model)
-      .filter((f) => {
-        if (wantedYear === null) return true;
+    // Written as a loop rather than a chain of filters: every step drops a
+    // candidate for its own reason, and a product that is gone has to be
+    // dropped before the rest of the conditions can look at it.
+    const byProduct = new Map<string, Match>();
+
+    for (const fit of fits) {
+      if (fit.make !== make) continue;
+      if (model && fit.model !== model) continue;
+
+      if (wantedYear !== null) {
         // An open end means open: a part listed from 2002 with no end date
         // fits everything since, which is how catalogues are written.
-        if (f.year_from && wantedYear < f.year_from) return false;
-        if (f.year_to && wantedYear > f.year_to) return false;
-        return true;
-      })
-      .map((f) => ({ fit: f, product: productById.get(f.product_id) }))
-      .filter((r): r is { fit: typeof r.fit; product: NonNullable<typeof r.product> } =>
-        Boolean(r.product),
-      )
-      .filter(
-        (r) =>
-          !q ||
-          r.product.name.toLowerCase().includes(q) ||
-          (r.product.part_number ?? "").toLowerCase().includes(q) ||
-          (r.product.brand ?? "").toLowerCase().includes(q),
-      );
+        if (fit.year_from && wantedYear < fit.year_from) continue;
+        if (fit.year_to && wantedYear > fit.year_to) continue;
+      }
 
-    // One part can match twice — listed for the saloon and the estate — and the
-    // counter wants the part once, with every reason it matched.
-    const byProduct = new Map<string, { product: (typeof rows)[number]["product"]; fits: typeof fits }>();
-    for (const row of rows) {
-      const entry = byProduct.get(row.product.id) ?? { product: row.product, fits: [] };
-      entry.fits.push(row.fit);
-      byProduct.set(row.product.id, entry);
+      const product = productById.get(fit.product_id);
+      if (!product) continue;
+
+      if (
+        q &&
+        !product.name.toLowerCase().includes(q) &&
+        !(product.part_number ?? "").toLowerCase().includes(q) &&
+        !(product.brand ?? "").toLowerCase().includes(q)
+      ) {
+        continue;
+      }
+
+      // One part can match twice — listed for the saloon and the estate — and
+      // the counter wants the part once, with every reason it matched.
+      const entry = byProduct.get(product.id) ?? { product, fits: [] };
+      entry.fits.push(fit);
+      byProduct.set(product.id, entry);
     }
 
     return [...byProduct.values()].sort((a, b) => {

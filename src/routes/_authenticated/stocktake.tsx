@@ -17,7 +17,7 @@ import { useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { ClipboardList, Search, TriangleAlert } from "lucide-react";
-import { useProducts } from "@/lib/data";
+import { useProducts, type Product } from "@/lib/data";
 import { insertRows } from "@/lib/db";
 import { useIndustry } from "@/hooks/useIndustry";
 import { useAuth } from "@/hooks/useAuth";
@@ -41,6 +41,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
+
+/** A line where the count and the system disagree. */
+type Variance = { product: Product; count: number; delta: number; value: number };
 
 export const Route = createFileRoute("/_authenticated/stocktake")({
   head: () => ({
@@ -78,17 +81,22 @@ function StockTake() {
 
   /** Only the rows somebody actually typed a number into, and only the ones that differ. */
   const variances = useMemo(() => {
-    return products
-      .map((p) => {
-        const typed = counted[p.id];
-        if (typed === undefined || typed.trim() === "") return null;
-        const count = Number(typed);
-        if (!Number.isFinite(count) || count < 0) return null;
-        const delta = count - Number(p.stock_quantity);
-        if (delta === 0) return null;
-        return { product: p, count, delta, value: delta * Number(p.unit_buying_price) };
-      })
-      .filter((v): v is NonNullable<typeof v> => v !== null);
+    const found: Variance[] = [];
+    for (const product of products) {
+      const typed = counted[product.id];
+      if (typed === undefined || typed.trim() === "") continue;
+      const count = Number(typed);
+      if (!Number.isFinite(count) || count < 0) continue;
+      const delta = count - Number(product.stock_quantity);
+      if (delta === 0) continue;
+      found.push({
+        product,
+        count,
+        delta,
+        value: delta * Number(product.unit_buying_price),
+      });
+    }
+    return found;
   }, [products, counted]);
 
   const shortfall = variances.filter((v) => v.delta < 0);
