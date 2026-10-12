@@ -7,6 +7,7 @@ each one may do, and confirms subscription payments.
 
 from datetime import datetime, time, timedelta
 
+from django.conf import settings
 from django.db import transaction
 from django.db.models import Count, Max, Q, Sum
 from django.shortcuts import get_object_or_404
@@ -61,6 +62,11 @@ def billing_state(workspace, now):
         return "unreviewed"
     if workspace.access == "suspended":
         return "suspended"
+    # Nobody is being charged on this deployment, so no business can be on a
+    # trial or past one. Saying "trial ended" while the product is free is how
+    # the console ends up contradicting the app.
+    if not settings.BILLING_ENABLED:
+        return "free"
     if workspace.access == "free":
         return "free"
     if workspace.subscribed and workspace.paid_until and workspace.paid_until > now:
@@ -119,7 +125,16 @@ class OverviewView(ConsoleView):
             datetime.combine(now.date().replace(day=1), time.min)
         )
         workspaces = list(Workspace.objects.all())
-        states = {"trial": 0, "paying": 0, "expired": 0, "free": 0, "suspended": 0}
+        # Every state billing_state can return has to have a bucket here, or
+        # counting them raises a KeyError and the whole page 500s.
+        states = {
+            "unreviewed": 0,
+            "trial": 0,
+            "paying": 0,
+            "expired": 0,
+            "free": 0,
+            "suspended": 0,
+        }
         for workspace in workspaces:
             states[billing_state(workspace, now)] += 1
 

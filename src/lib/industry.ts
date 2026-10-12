@@ -35,11 +35,14 @@ export type IndustryId =
  * profile — and why the picker groups them instead of listing eleven trades
  * flat.
  */
-export type IndustryFamily = "retail" | "health" | "trade" | "food";
+export type IndustryFamily = "retail" | "health" | "motor" | "trade" | "food";
 
 export const FAMILY_LABELS: Record<IndustryFamily, string> = {
   retail: "Shops & general trade",
   health: "Health",
+  // Its own group rather than buried under building: a spare parts dealer
+  // looks for the word "vehicle", not "technical".
+  motor: "Vehicles & parts",
   trade: "Building & technical",
   food: "Food & drink",
 };
@@ -311,7 +314,7 @@ const PROFILES: IndustryProfile[] = [
   },
   {
     id: "autoparts",
-    family: "trade",
+    family: "motor",
     label: "Auto spare parts",
     blurb: "Find parts by vehicle, with part numbers, brands and shelf locations.",
     terms: {
@@ -480,7 +483,7 @@ export type IndustryGroup = {
 
 /** The profiles grouped for a picker, in the order the groups should appear. */
 export const INDUSTRY_GROUPS: IndustryGroup[] = (
-  ["retail", "health", "trade", "food"] as IndustryFamily[]
+  ["retail", "health", "motor", "trade", "food"] as IndustryFamily[]
 ).map((family) => ({
   family,
   label: FAMILY_LABELS[family],

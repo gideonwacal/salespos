@@ -4,7 +4,14 @@ import { count, money } from "../format";
 import { Link } from "../router";
 import { Failed, Feed, Loading, Metric, PageTitle, Panel, STATE_LABEL } from "../ui";
 
-const STATES: BusinessState[] = ["trial", "paying", "expired", "free", "suspended"];
+const STATES: BusinessState[] = [
+  "unreviewed",
+  "trial",
+  "paying",
+  "expired",
+  "free",
+  "suspended",
+];
 
 export function Overview() {
   const { data, error, isLoading } = useQuery({
