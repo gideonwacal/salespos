@@ -11,3 +11,7 @@ python manage.py collectstatic --no-input
 
 # Apply migrations at build time, so the release is never newer than its schema.
 python manage.py migrate
+
+# The platform owner's login, from PLATFORM_ADMIN_EMAIL and _PASSWORD. Does
+# nothing when they are unset, and is the only way in on a host with no shell.
+python manage.py ensure_platform_admin

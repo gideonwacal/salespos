@@ -912,3 +912,101 @@ class NewBusinessReviewTests(APITestCase):
         self.assertEqual(
             ActivityLog.objects.filter(action="reviewed a new business").count(), entries
         )
+
+
+class PlatformAdminCommandTests(APITestCase):
+    """The only way onto a host with no shell, so it has to be dependable."""
+
+    def run_command(self):
+        from io import StringIO
+
+        from django.core.management import call_command
+
+        out = StringIO()
+        call_command("ensure_platform_admin", stdout=out, stderr=out)
+        return out.getvalue()
+
+    @override_settings()
+    def test_nothing_happens_without_the_variables(self):
+        """A deployment that never asked for an admin must not grow one."""
+        with mock.patch.dict("os.environ", {}, clear=True):
+            self.run_command()
+        self.assertFalse(User.objects.filter(is_superuser=True).exists())
+
+    def test_it_creates_the_account(self):
+        with mock.patch.dict(
+            "os.environ",
+            {
+                "PLATFORM_ADMIN_EMAIL": "boss@salespos.app",
+                "PLATFORM_ADMIN_PASSWORD": "a-long-enough-one",
+            },
+            clear=True,
+        ):
+            self.run_command()
+
+        user = User.objects.get(email="boss@salespos.app")
+        self.assertTrue(user.is_superuser)
+        self.assertTrue(user.is_staff)
+        self.assertTrue(user.check_password("a-long-enough-one"))
+
+    def test_running_again_resets_the_password_rather_than_failing(self):
+        """This is the recovery path: change the variable, redeploy, back in."""
+        User.objects.create_user(email="boss@salespos.app", password="forgotten")
+
+        with mock.patch.dict(
+            "os.environ",
+            {
+                "PLATFORM_ADMIN_EMAIL": "boss@salespos.app",
+                "PLATFORM_ADMIN_PASSWORD": "the-new-one-now",
+            },
+            clear=True,
+        ):
+            self.run_command()
+
+        user = User.objects.get(email="boss@salespos.app")
+        self.assertTrue(user.is_superuser)
+        self.assertTrue(user.check_password("the-new-one-now"))
+        self.assertEqual(User.objects.filter(email="boss@salespos.app").count(), 1)
+
+    def test_a_short_password_is_refused(self):
+        """It opens every business on the platform; 'admin123' will not do."""
+        with mock.patch.dict(
+            "os.environ",
+            {"PLATFORM_ADMIN_EMAIL": "boss@salespos.app", "PLATFORM_ADMIN_PASSWORD": "short"},
+            clear=True,
+        ):
+            output = self.run_command()
+
+        self.assertIn("at least 10", output)
+        self.assertFalse(User.objects.filter(email="boss@salespos.app").exists())
+
+    def test_the_password_never_reaches_the_build_log(self):
+        with mock.patch.dict(
+            "os.environ",
+            {
+                "PLATFORM_ADMIN_EMAIL": "boss@salespos.app",
+                "PLATFORM_ADMIN_PASSWORD": "a-long-enough-one",
+            },
+            clear=True,
+        ):
+            output = self.run_command()
+
+        self.assertNotIn("a-long-enough-one", output)
+
+    def test_the_account_opens_the_control_room(self):
+        with mock.patch.dict(
+            "os.environ",
+            {
+                "PLATFORM_ADMIN_EMAIL": "boss@salespos.app",
+                "PLATFORM_ADMIN_PASSWORD": "a-long-enough-one",
+            },
+            clear=True,
+        ):
+            self.run_command()
+
+        Workspace.objects.create(name="Someone Else's Shop")
+        self.client.force_authenticate(user=User.objects.get(email="boss@salespos.app"))
+
+        response = self.client.get("/api/console/businesses/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([row["name"] for row in response.data], ["Someone Else's Shop"])

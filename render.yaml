@@ -94,6 +94,14 @@ services:
         sync: false
       - key: REQUIRE_EMAIL_VERIFICATION
         sync: false
+      # The platform owner's login for the Control Room. Set both and the
+      # account is created on the next deploy; change the password and
+      # redeploy to reset it. Render's free tier has no shell, so this is the
+      # only way to make one.
+      - key: PLATFORM_ADMIN_EMAIL
+        sync: false
+      - key: PLATFORM_ADMIN_PASSWORD
+        sync: false
       - key: JWT_ACCESS_MINUTES
         value: "60"
       - key: JWT_REFRESH_DAYS
