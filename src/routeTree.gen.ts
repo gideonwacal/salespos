@@ -22,6 +22,7 @@ import { Route as AuthenticatedExpensesRouteImport } from './routes/_authenticat
 import { Route as AuthenticatedExpiryRouteImport } from './routes/_authenticated/expiry'
 import { Route as AuthenticatedFitmentRouteImport } from './routes/_authenticated/fitment'
 import { Route as AuthenticatedInventoryRouteImport } from './routes/_authenticated/inventory'
+import { Route as AuthenticatedPatientsRouteImport } from './routes/_authenticated/patients'
 import { Route as AuthenticatedPosRouteImport } from './routes/_authenticated/pos'
 import { Route as AuthenticatedQuotationsRouteImport } from './routes/_authenticated/quotations'
 import { Route as AuthenticatedReportsRouteImport } from './routes/_authenticated/reports'
@@ -30,6 +31,7 @@ import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticat
 import { Route as AuthenticatedSetupRouteImport } from './routes/_authenticated/setup'
 import { Route as AuthenticatedStaffRouteImport } from './routes/_authenticated/staff'
 import { Route as AuthenticatedStocktakeRouteImport } from './routes/_authenticated/stocktake'
+import { Route as AuthenticatedVisitsRouteImport } from './routes/_authenticated/visits'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -95,6 +97,11 @@ const AuthenticatedInventoryRoute = AuthenticatedInventoryRouteImport.update({
   path: '/inventory',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedPatientsRoute = AuthenticatedPatientsRouteImport.update({
+  id: '/patients',
+  path: '/patients',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthenticatedPosRoute = AuthenticatedPosRouteImport.update({
   id: '/pos',
   path: '/pos',
@@ -135,6 +142,11 @@ const AuthenticatedStocktakeRoute = AuthenticatedStocktakeRouteImport.update({
   path: '/stocktake',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedVisitsRoute = AuthenticatedVisitsRouteImport.update({
+  id: '/visits',
+  path: '/visits',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -149,6 +161,7 @@ export interface FileRoutesByFullPath {
   '/expiry': typeof AuthenticatedExpiryRoute
   '/fitment': typeof AuthenticatedFitmentRoute
   '/inventory': typeof AuthenticatedInventoryRoute
+  '/patients': typeof AuthenticatedPatientsRoute
   '/pos': typeof AuthenticatedPosRoute
   '/quotations': typeof AuthenticatedQuotationsRoute
   '/reports': typeof AuthenticatedReportsRoute
@@ -157,6 +170,7 @@ export interface FileRoutesByFullPath {
   '/setup': typeof AuthenticatedSetupRoute
   '/staff': typeof AuthenticatedStaffRoute
   '/stocktake': typeof AuthenticatedStocktakeRoute
+  '/visits': typeof AuthenticatedVisitsRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -171,6 +185,7 @@ export interface FileRoutesByTo {
   '/expiry': typeof AuthenticatedExpiryRoute
   '/fitment': typeof AuthenticatedFitmentRoute
   '/inventory': typeof AuthenticatedInventoryRoute
+  '/patients': typeof AuthenticatedPatientsRoute
   '/pos': typeof AuthenticatedPosRoute
   '/quotations': typeof AuthenticatedQuotationsRoute
   '/reports': typeof AuthenticatedReportsRoute
@@ -179,6 +194,7 @@ export interface FileRoutesByTo {
   '/setup': typeof AuthenticatedSetupRoute
   '/staff': typeof AuthenticatedStaffRoute
   '/stocktake': typeof AuthenticatedStocktakeRoute
+  '/visits': typeof AuthenticatedVisitsRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -195,6 +211,7 @@ export interface FileRoutesById {
   '/_authenticated/expiry': typeof AuthenticatedExpiryRoute
   '/_authenticated/fitment': typeof AuthenticatedFitmentRoute
   '/_authenticated/inventory': typeof AuthenticatedInventoryRoute
+  '/_authenticated/patients': typeof AuthenticatedPatientsRoute
   '/_authenticated/pos': typeof AuthenticatedPosRoute
   '/_authenticated/quotations': typeof AuthenticatedQuotationsRoute
   '/_authenticated/reports': typeof AuthenticatedReportsRoute
@@ -203,6 +220,7 @@ export interface FileRoutesById {
   '/_authenticated/setup': typeof AuthenticatedSetupRoute
   '/_authenticated/staff': typeof AuthenticatedStaffRoute
   '/_authenticated/stocktake': typeof AuthenticatedStocktakeRoute
+  '/_authenticated/visits': typeof AuthenticatedVisitsRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -219,6 +237,7 @@ export interface FileRouteTypes {
     | '/expiry'
     | '/fitment'
     | '/inventory'
+    | '/patients'
     | '/pos'
     | '/quotations'
     | '/reports'
@@ -227,6 +246,7 @@ export interface FileRouteTypes {
     | '/setup'
     | '/staff'
     | '/stocktake'
+    | '/visits'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -241,6 +261,7 @@ export interface FileRouteTypes {
     | '/expiry'
     | '/fitment'
     | '/inventory'
+    | '/patients'
     | '/pos'
     | '/quotations'
     | '/reports'
@@ -249,6 +270,7 @@ export interface FileRouteTypes {
     | '/setup'
     | '/staff'
     | '/stocktake'
+    | '/visits'
   id:
     | '__root__'
     | '/'
@@ -264,6 +286,7 @@ export interface FileRouteTypes {
     | '/_authenticated/expiry'
     | '/_authenticated/fitment'
     | '/_authenticated/inventory'
+    | '/_authenticated/patients'
     | '/_authenticated/pos'
     | '/_authenticated/quotations'
     | '/_authenticated/reports'
@@ -272,6 +295,7 @@ export interface FileRouteTypes {
     | '/_authenticated/setup'
     | '/_authenticated/staff'
     | '/_authenticated/stocktake'
+    | '/_authenticated/visits'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -375,6 +399,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedInventoryRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/patients': {
+      id: '/_authenticated/patients'
+      path: '/patients'
+      fullPath: '/patients'
+      preLoaderRoute: typeof AuthenticatedPatientsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/pos': {
       id: '/_authenticated/pos'
       path: '/pos'
@@ -431,6 +462,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedStocktakeRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/visits': {
+      id: '/_authenticated/visits'
+      path: '/visits'
+      fullPath: '/visits'
+      preLoaderRoute: typeof AuthenticatedVisitsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
   }
 }
 
@@ -443,6 +481,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedExpiryRoute: typeof AuthenticatedExpiryRoute
   AuthenticatedFitmentRoute: typeof AuthenticatedFitmentRoute
   AuthenticatedInventoryRoute: typeof AuthenticatedInventoryRoute
+  AuthenticatedPatientsRoute: typeof AuthenticatedPatientsRoute
   AuthenticatedPosRoute: typeof AuthenticatedPosRoute
   AuthenticatedQuotationsRoute: typeof AuthenticatedQuotationsRoute
   AuthenticatedReportsRoute: typeof AuthenticatedReportsRoute
@@ -451,6 +490,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedSetupRoute: typeof AuthenticatedSetupRoute
   AuthenticatedStaffRoute: typeof AuthenticatedStaffRoute
   AuthenticatedStocktakeRoute: typeof AuthenticatedStocktakeRoute
+  AuthenticatedVisitsRoute: typeof AuthenticatedVisitsRoute
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
@@ -462,6 +502,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedExpiryRoute: AuthenticatedExpiryRoute,
   AuthenticatedFitmentRoute: AuthenticatedFitmentRoute,
   AuthenticatedInventoryRoute: AuthenticatedInventoryRoute,
+  AuthenticatedPatientsRoute: AuthenticatedPatientsRoute,
   AuthenticatedPosRoute: AuthenticatedPosRoute,
   AuthenticatedQuotationsRoute: AuthenticatedQuotationsRoute,
   AuthenticatedReportsRoute: AuthenticatedReportsRoute,
@@ -470,6 +511,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedSetupRoute: AuthenticatedSetupRoute,
   AuthenticatedStaffRoute: AuthenticatedStaffRoute,
   AuthenticatedStocktakeRoute: AuthenticatedStocktakeRoute,
+  AuthenticatedVisitsRoute: AuthenticatedVisitsRoute,
 }
 
 const AuthenticatedRouteRouteWithChildren =

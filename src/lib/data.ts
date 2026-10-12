@@ -38,6 +38,67 @@ export type Product = {
   created_by_name?: string | null;
 };
 
+/** Someone the clinic treats. Everything clinical hangs off this. */
+export type Patient = {
+  id: string;
+  patient_number: string;
+  full_name: string;
+  sex: string;
+  date_of_birth: string | null;
+  stated_age: number | null;
+  age: number | null;
+  phone: string;
+  village: string;
+  nin: string;
+  next_of_kin_name: string;
+  next_of_kin_phone: string;
+  allergies: string;
+  notes: string;
+  visit_count: number;
+  created_at: string;
+};
+
+/** One medicine ordered at a visit, and what was actually handed over. */
+export type Prescription = {
+  id: string;
+  visit_id: string;
+  patient_id: string;
+  product_id: string | null;
+  medicine: string;
+  dose: string;
+  frequency: string;
+  duration: string;
+  instructions: string;
+  quantity_ordered: number;
+  quantity_dispensed: number;
+  outstanding: number;
+  dispensed_at: string | null;
+  created_at: string;
+};
+
+export type VisitStatus = "waiting" | "in_consultation" | "to_dispense" | "closed";
+
+/** One attendance: the queue slot, the consultation and its record. */
+export type Visit = {
+  id: string;
+  patient_id: string;
+  patient_name: string;
+  patient_number: string;
+  allergies: string;
+  status: VisitStatus;
+  complaint: string;
+  temperature: string | null;
+  blood_pressure: string;
+  pulse: number | null;
+  weight: string | null;
+  examination: string;
+  diagnosis: string;
+  treatment_plan: string;
+  closed_at: string | null;
+  prescriptions: Prescription[];
+  created_at: string;
+};
+
 /** One vehicle a part fits. Many per part: a filter fits a dozen models. */
 export type VehicleFit = {
   id: string;
@@ -236,6 +297,15 @@ export function useProducts() {
 
 /** Every fitment in the shop. Small enough to filter in the browser, and the
  *  finder needs to count matches across all of them at once. */
+export function usePatients() {
+  return useTable<Patient>("patients", "patients", { orderBy: "full_name", ascending: true });
+}
+
+/** Today's attendances and the recent ones, newest first. */
+export function useVisits() {
+  return useTable<Visit>("visits", "visits", { orderBy: "created_at", limit: 300 });
+}
+
 export function useVehicleFits() {
   return useTable<VehicleFit>("vehicle_fits", "vehicle_fits", { orderBy: "make", ascending: true });
 }

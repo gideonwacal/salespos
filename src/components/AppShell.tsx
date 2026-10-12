@@ -21,6 +21,8 @@ import {
   CalendarClock,
   Layers,
   Car,
+  Stethoscope,
+  Users2,
 } from "lucide-react";
 import {
   isDemo,
@@ -57,8 +59,22 @@ const NAV: {
   feature?: ProductFeature;
 }[] = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, owner: true, manager: false },
-  { to: "/pos", label: "POS Terminal", icon: ScanBarcode, owner: false, manager: true, module: "pos" },
-  { to: "/inventory", label: "Inventory", icon: Package, owner: false, manager: true, module: "inventory" },
+  {
+    to: "/pos",
+    label: "POS Terminal",
+    icon: ScanBarcode,
+    owner: false,
+    manager: true,
+    module: "pos",
+  },
+  {
+    to: "/inventory",
+    label: "Inventory",
+    icon: Package,
+    owner: false,
+    manager: true,
+    module: "inventory",
+  },
   {
     to: "/stocktake",
     label: "Stock take",
@@ -66,6 +82,24 @@ const NAV: {
     owner: true,
     manager: true,
     module: "inventory",
+  },
+  {
+    to: "/patients",
+    label: "Patients",
+    icon: Users2,
+    owner: true,
+    manager: true,
+    module: "inventory",
+    feature: "clinical",
+  },
+  {
+    to: "/visits",
+    label: "Consultations",
+    icon: Stethoscope,
+    owner: true,
+    manager: true,
+    module: "inventory",
+    feature: "clinical",
   },
   {
     to: "/fitment",
@@ -93,11 +127,46 @@ const NAV: {
     manager: false,
     module: "reports",
   },
-  { to: "/quotations", label: "Quotations", icon: FileText, owner: true, manager: true, module: "quotations" },
-  { to: "/debtors", label: "Credit & Debtors", icon: HandCoins, owner: true, manager: true, module: "debtors" },
-  { to: "/expenses", label: "Expenses", icon: Receipt, owner: false, manager: true, module: "expenses" },
-  { to: "/reports", label: "Financial Reports", icon: LineChart, owner: true, manager: false, module: "reports" },
-  { to: "/staff", label: "Users & Roles", icon: Users, owner: true, manager: false, module: "staff" },
+  {
+    to: "/quotations",
+    label: "Quotations",
+    icon: FileText,
+    owner: true,
+    manager: true,
+    module: "quotations",
+  },
+  {
+    to: "/debtors",
+    label: "Credit & Debtors",
+    icon: HandCoins,
+    owner: true,
+    manager: true,
+    module: "debtors",
+  },
+  {
+    to: "/expenses",
+    label: "Expenses",
+    icon: Receipt,
+    owner: false,
+    manager: true,
+    module: "expenses",
+  },
+  {
+    to: "/reports",
+    label: "Financial Reports",
+    icon: LineChart,
+    owner: true,
+    manager: false,
+    module: "reports",
+  },
+  {
+    to: "/staff",
+    label: "Users & Roles",
+    icon: Users,
+    owner: true,
+    manager: false,
+    module: "staff",
+  },
   { to: "/billing", label: "Plan & Billing", icon: CreditCard, owner: true, manager: false },
   { to: "/data", label: "Import & Export", icon: FileSpreadsheet, owner: true, manager: true },
   { to: "/settings", label: "Business Settings", icon: Settings, owner: true, manager: false },
@@ -170,7 +239,11 @@ export function AppShell({ children }: { children: ReactNode }) {
         <div className="flex items-center gap-3 border-b border-sidebar-border px-5 py-5">
           <div className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-sidebar-primary text-sidebar-primary-foreground">
             {business.logo_url ? (
-              <img src={business.logo_url} alt={`${business.name} logo`} className="size-full object-cover" />
+              <img
+                src={business.logo_url}
+                alt={`${business.name} logo`}
+                className="size-full object-cover"
+              />
             ) : (
               <Store className="size-5" />
             )}

@@ -62,7 +62,9 @@ export type ProductFeature =
   /** A manufacturer part number, distinct from the shop own barcode. */
   | "part_number"
   /** Which vehicles a part fits. The reason a spare parts shop is its own trade. */
-  | "vehicle_fit";
+  | "vehicle_fit"
+  /** Patients, visits and prescriptions: the trades that treat people. */
+  | "clinical";
 
 export type IndustryProfile = {
   id: IndustryId;
@@ -221,7 +223,14 @@ const PROFILES: IndustryProfile[] = [
     },
     // A consultation has no shelf and never runs out; service_item is what
     // stops the counter refusing to sell one because stock reads zero.
-    features: ["expiry", "batch_number", "prescription", "unit_of_measure", "service_item"],
+    features: [
+      "expiry",
+      "batch_number",
+      "prescription",
+      "unit_of_measure",
+      "service_item",
+      "clinical",
+    ],
     categories: [
       "Consultation & Services",
       "Injectables",
@@ -250,7 +259,14 @@ const PROFILES: IndustryProfile[] = [
       inventory: "Dispensary & store",
       category: "Drug class",
     },
-    features: ["expiry", "batch_number", "prescription", "unit_of_measure", "service_item"],
+    features: [
+      "expiry",
+      "batch_number",
+      "prescription",
+      "unit_of_measure",
+      "service_item",
+      "clinical",
+    ],
     categories: [
       "Consultation & Services",
       "Laboratory Tests",
@@ -285,7 +301,14 @@ const PROFILES: IndustryProfile[] = [
       inventory: "Hospital store",
       category: "Store section",
     },
-    features: ["expiry", "batch_number", "prescription", "unit_of_measure", "service_item"],
+    features: [
+      "expiry",
+      "batch_number",
+      "prescription",
+      "unit_of_measure",
+      "service_item",
+      "clinical",
+    ],
     categories: [
       "Consultation & Services",
       "Ward & Bed Charges",
