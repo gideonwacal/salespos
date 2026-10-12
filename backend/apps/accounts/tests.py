@@ -1010,3 +1010,44 @@ class PlatformAdminCommandTests(APITestCase):
         response = self.client.get("/api/console/businesses/")
         self.assertEqual(response.status_code, 200)
         self.assertEqual([row["name"] for row in response.data], ["Someone Else's Shop"])
+
+
+class BillingDisabledTests(APITestCase):
+    """While the product is free, nothing about money may get in anyone's way."""
+
+    def setUp(self):
+        self.owner = User.objects.create_user(email="owner@shop.com", password="sup3rsecret!")
+        self.workspace = Workspace.objects.create(name="Corner Shop")
+        Membership.objects.create(user=self.owner, workspace=self.workspace, role="owner")
+        self.client.force_authenticate(user=self.owner)
+        self.headers = {"HTTP_X_WORKSPACE": str(self.workspace.id)}
+        # Long over, and never paid for.
+        self.workspace.trial_ends = timezone.now() - timedelta(days=90)
+        self.workspace.save(update_fields=["trial_ends"])
+
+    @override_settings(BILLING_ENABLED=False)
+    def test_an_expired_trial_does_not_lock_anything(self):
+        response = self.client.get("/api/products/", **self.headers)
+        self.assertEqual(response.status_code, 200)
+
+    @override_settings(BILLING_ENABLED=True)
+    def test_the_same_business_locks_once_billing_is_switched_on(self):
+        """The switch is the only difference; nothing was deleted to turn it off."""
+        response = self.client.get("/api/products/", **self.headers)
+        self.assertEqual(response.status_code, 403)
+
+    @override_settings(BILLING_ENABLED=False)
+    def test_the_business_tells_the_app_that_billing_is_off(self):
+        response = self.client.get("/api/auth/me/", **self.headers)
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.data["active_workspace"]["billing_enabled"])
+
+    @override_settings(BILLING_ENABLED=False)
+    def test_suspension_still_bites(self):
+        """Free is not the same as unmanageable: a shut business stays shut."""
+        self.workspace.access = "suspended"
+        self.workspace.save(update_fields=["access"])
+
+        response = self.client.get("/api/products/", **self.headers)
+        self.assertEqual(response.status_code, 403)
+        self.assertIn("suspended", str(response.data).lower())

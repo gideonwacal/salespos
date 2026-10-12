@@ -91,6 +91,11 @@ def ensure_workspace_paid(workspace):
     if workspace is None:
         return
     ensure_workspace_open(workspace)
+    # Nobody is paying yet, so nobody can be behind on it. Suspension still
+    # applies above: that is the platform owner shutting a business, not a
+    # bill going unpaid.
+    if not settings.BILLING_ENABLED:
+        return
     if workspace.locked:
         raise PermissionDenied(
             "Your free trial has ended. Choose a package on the billing page to carry on."

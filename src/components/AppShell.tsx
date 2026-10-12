@@ -22,7 +22,16 @@ import {
   Layers,
   Car,
 } from "lucide-react";
-import { isDemo, stopDemo, subscribeStore, planById, canUseModule, trialStatus, type ModuleId } from "@/lib/demo";
+import {
+  isDemo,
+  stopDemo,
+  subscribeStore,
+  planById,
+  canUseModule,
+  trialStatus,
+  billingOff,
+  type ModuleId,
+} from "@/lib/demo";
 import { startTour } from "@/lib/tour";
 import { EodSummaryDialog } from "@/components/EodSummary";
 import { useDebts, debtStatus, outstanding } from "@/lib/data";
@@ -131,6 +140,8 @@ export function AppShell({ children }: { children: ReactNode }) {
   const items = (demo ? NAV : NAV.filter((n) => (isOwner ? n.owner : n.manager)))
     .filter((n) => inPlan(n.module))
     .filter((n) => !n.feature || hasFeature(industry, n.feature))
+    // Nothing to pay for yet, so nothing to show.
+    .filter((n) => n.to !== "/billing" || !billingOff(business))
     // A pharmacy calls it the Dispensary, a hardware store just Stock; and a
     // supermarket counts departments where a pharmacy counts drug classes.
     .map((n) =>
@@ -202,9 +213,12 @@ export function AppShell({ children }: { children: ReactNode }) {
 
         <div className="space-y-1 border-t border-sidebar-border p-4 text-[11px] leading-relaxed text-sidebar-foreground/60">
           <p className="font-semibold text-sidebar-foreground/80">
-            {trialStatus(business).onTrial
-              ? "Free trial"
-              : `${planById(business.plan).name} plan`} · powered by {APP.name}
+            {billingOff(business)
+              ? "Free to use"
+              : trialStatus(business).onTrial
+                ? "Free trial"
+                : `${planById(business.plan).name} plan`}{" "}
+            · powered by {APP.name}
           </p>
           {(business.address || location) && (
             <p>

@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.contrib.auth.password_validation import validate_password
 from django.db import transaction
 from rest_framework import serializers
@@ -12,6 +13,14 @@ from apps.accounts.models import (
 
 
 class WorkspaceSerializer(serializers.ModelSerializer):
+    # Whether anyone is being charged on this deployment at all. Sent with the
+    # business so the app can hide the billing page and stop counting trial
+    # days without needing its own copy of the setting.
+    billing_enabled = serializers.SerializerMethodField()
+
+    def get_billing_enabled(self, obj) -> bool:
+        return settings.BILLING_ENABLED
+
     class Meta:
         model = Workspace
         fields = [
@@ -38,6 +47,7 @@ class WorkspaceSerializer(serializers.ModelSerializer):
             "subscribed",
             "paid_until",
             "configured",
+            "billing_enabled",
             "created_at",
         ]
         # What a shop has paid for, and whether it may trade at all, only ever

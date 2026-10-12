@@ -50,6 +50,14 @@ export type Business = {
   subscribed: boolean;
   paid_until: string | null;
   configured: boolean;
+  /**
+   * Is anybody being charged on this deployment yet?
+   *
+   * Sent by the server. False means the product is being given away: no trial
+   * that ends, no package that limits anything, no billing page. Absent means
+   * an older server that only knew how to charge, so it is treated as on.
+   */
+  billing_enabled?: boolean;
 };
 
 export type AccountUser = {
@@ -950,7 +958,26 @@ export type TrialStatus = {
   locked: boolean;
 };
 
+/** True while the product is free for everyone on this deployment. */
+export function billingOff(business: Business) {
+  return business.billing_enabled === false;
+}
+
 export function trialStatus(business: Business): TrialStatus {
+  // Nothing to be behind on, so nothing to lock. Reported as "free" because
+  // that is the state the rest of the app already knows how to show.
+  if (billingOff(business)) {
+    return {
+      onTrial: false,
+      subscribed: false,
+      free: true,
+      suspended: business.access === "suspended",
+      daysLeft: 0,
+      expired: false,
+      locked: business.access === "suspended",
+    };
+  }
+
   const paidUntil = business.paid_until ? new Date(business.paid_until).getTime() : 0;
   const subscribed = !!business.subscribed && paidUntil > Date.now();
   const end = new Date(business.trial_ends).getTime();
@@ -975,10 +1002,13 @@ export function trialStatus(business: Business): TrialStatus {
  * everything, so it can try the whole product before choosing a package.
  */
 export function canUseModule(business: Business, mod: ModuleId) {
+  // Free means the whole product, not the smallest package of it.
+  if (billingOff(business)) return true;
   return trialStatus(business).onTrial || planHasModule(business.plan, mod);
 }
 
 export function seatLimit(business: Business) {
+  if (billingOff(business)) return Infinity;
   return trialStatus(business).onTrial ? Infinity : planById(business.plan).seats;
 }
 

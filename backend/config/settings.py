@@ -301,6 +301,14 @@ AIRTEL_BASE_URL = os.environ.get(
 AIRTEL_COUNTRY = os.environ.get("AIRTEL_COUNTRY", "UG").strip()
 AIRTEL_CURRENCY = os.environ.get("AIRTEL_CURRENCY", "UGX").strip()
 
+# Is anybody being charged yet?
+#
+# Off while the product is being given away: no trial that ends, no package
+# that limits anything, no billing page. Nothing is deleted by switching it
+# off — plans, payments and the trial clock are all still here, and setting
+# BILLING_ENABLED=1 brings them back exactly as they were.
+BILLING_ENABLED = os.environ.get("BILLING_ENABLED", "0") != "0"
+
 # Where the app itself runs, for links back to it. Falling back to the first
 # allowed origin means a normal deployment needs no extra setting.
 APP_BASE_URL = os.environ.get("APP_BASE_URL", "").strip().rstrip("/")

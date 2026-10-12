@@ -5,6 +5,7 @@ import {
   getBusiness,
   canUseModule,
   trialStatus,
+  billingOff,
   type ModuleId,
 } from "@/lib/demo";
 import { AppShell } from "@/components/AppShell";
@@ -34,6 +35,11 @@ export const Route = createFileRoute("/_authenticated")({
     const business = getBusiness();
     if (!business.configured && !location.pathname.startsWith("/setup")) {
       throw redirect({ to: "/setup" });
+    }
+    // While the product is free there is no billing page to land on, so a
+    // bookmark or an old link goes to the dashboard rather than a dead screen.
+    if (billingOff(business) && location.pathname.startsWith("/billing")) {
+      throw redirect({ to: "/dashboard" });
     }
     const open = ALWAYS_ALLOWED.some((p) => location.pathname.startsWith(p));
     if (!open && trialStatus(business).locked) {

@@ -98,6 +98,10 @@ services:
       # account is created on the next deploy; change the password and
       # redeploy to reset it. Render's free tier has no shell, so this is the
       # only way to make one.
+      # Off while the product is free: no trial that ends, no package limits,
+      # no billing page. Set to 1 to start charging; nothing was deleted.
+      - key: BILLING_ENABLED
+        sync: false
       - key: PLATFORM_ADMIN_EMAIL
         sync: false
       - key: PLATFORM_ADMIN_PASSWORD
