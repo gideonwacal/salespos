@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { Store, PlayCircle } from "lucide-react";
 import { startDemo, getBusiness } from "@/lib/demo";
 import { signIn as authSignIn, signUp as authSignUp } from "@/lib/auth";
+import type { MeResponse } from "@/lib/api";
 import { useAuth } from "@/hooks/useAuth";
 import { APP } from "@/lib/format";
 import { Button } from "@/components/ui/button";
@@ -58,24 +59,26 @@ function AuthPage() {
     password: "",
   });
 
-  const afterAuth = () => {
-    refresh();
+  const afterAuth = (me?: MeResponse) => {
+    // The server has just answered; asking it the same question again is a
+    // whole round trip nobody is waiting for on purpose.
+    refresh(me);
     navigate({ to: getBusiness().configured ? "/dashboard" : "/setup", replace: true });
   };
 
   const doSignIn = async () => {
     setBusy(true);
     try {
-      const signedIn = await authSignIn(signIn.email.trim(), signIn.password);
+      const { user, me } = await authSignIn(signIn.email.trim(), signIn.password);
       toast.success("Welcome back");
       // The platform owner has no shop of their own, so there is no dashboard
       // to land on — they are asked which of the two jobs this is.
-      if (signedIn.platform) {
-        refresh();
+      if (user.platform) {
+        refresh(me);
         navigate({ to: "/platform", replace: true });
         return;
       }
-      afterAuth();
+      afterAuth(me);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not sign in");
     } finally {

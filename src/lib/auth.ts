@@ -13,6 +13,7 @@
  */
 
 import * as api from "@/lib/api";
+import type { MeResponse } from "@/lib/api";
 import {
   adoptServerSession,
   signInLocal,
@@ -59,7 +60,18 @@ export function businessFrom(workspace: api.ApiWorkspace): Partial<Business> {
   };
 }
 
-export async function signIn(email: string, password: string): Promise<SessionUser> {
+/**
+ * Sign in, and hand back what the server already told us.
+ *
+ * `me` comes back so the caller does not have to ask again: logging in already
+ * costs two round trips, and on a sleeping free-tier host each one is seconds
+ * rather than milliseconds. Absent when the sign-in fell back to the local
+ * store, which has no server to have answered.
+ */
+export async function signIn(
+  email: string,
+  password: string,
+): Promise<{ user: SessionUser; me?: MeResponse }> {
   try {
     const me = await api.login(email, password);
     const user: SessionUser = {
@@ -79,10 +91,10 @@ export async function signIn(email: string, password: string): Promise<SessionUs
         business: businessFrom(workspace),
       });
     }
-    return user;
+    return { user, me };
   } catch (error) {
     if (!isUnreachable(error)) throw error;
-    return signInLocal(email.trim(), password);
+    return { user: signInLocal(email.trim(), password) };
   }
 }
 

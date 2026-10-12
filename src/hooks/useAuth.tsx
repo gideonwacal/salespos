@@ -7,7 +7,7 @@ import {
   type SessionUser,
   type AppRole,
 } from "@/lib/demo";
-import { fetchMe, isLive } from "@/lib/api";
+import { fetchMe, isLive, type MeResponse } from "@/lib/api";
 import { businessFrom, signOut as signOutEverywhere } from "@/lib/auth";
 
 export type { AppRole };
@@ -27,7 +27,7 @@ type AuthValue = {
   live: boolean;
   loading: boolean;
   signOut: () => void;
-  refresh: () => void;
+  refresh: (known?: MeResponse) => void;
 };
 
 const AuthContext = createContext<AuthValue>({
@@ -52,14 +52,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [platform, setPlatform] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  const refresh = () => {
+  /**
+   * Re-read who we are.
+   *
+   * `known` is the answer when the caller has only just received it — signing
+   * in already asks the server who you are, and asking twice in a row costs a
+   * whole round trip on a connection where that is the slow part.
+   */
+  const refresh = (known?: MeResponse) => {
     setDemo(isDemo());
 
     // A held token means the server owns the session; ask it who we are rather
     // than trusting anything in local storage.
     if (isLive() && !isDemo()) {
       setLive(true);
-      fetchMe()
+      (known ? Promise.resolve(known) : fetchMe())
         .then((me) => {
           setUser({
             id: me.user.id,
