@@ -67,6 +67,9 @@ const blank = {
   batch_number: "",
   prescription_only: false,
   is_service: false,
+  part_number: "",
+  brand: "",
+  shelf_location: "",
 };
 
 function Inventory() {
@@ -132,6 +135,9 @@ function Inventory() {
       batch_number: p.batch_number ?? "",
       prescription_only: p.prescription_only ?? false,
       is_service: p.is_service ?? false,
+      part_number: p.part_number ?? "",
+      brand: p.brand ?? "",
+      shelf_location: p.shelf_location ?? "",
     });
     setValueDraft(null);
     setOpen(true);
@@ -162,6 +168,9 @@ function Inventory() {
       prescription_only: form.prescription_only,
       is_service:
         form.is_service || (!form.category && isServiceCategory(industry, category)),
+      part_number: form.part_number.trim(),
+      brand: form.brand.trim(),
+      shelf_location: form.shelf_location.trim(),
     };
     if (editing) await updateRow("products", editing.id, payload);
     // created_by is server-owned on a live session (the serializer ignores it),
@@ -703,6 +712,37 @@ function Inventory() {
                   onChange={(e) => setForm({ ...form, expiry_date: e.target.value })}
                 />
               </div>
+            )}
+            {hasFeature(industry, "part_number") && (
+              <>
+                <div className="space-y-1.5">
+                  <Label>Part number</Label>
+                  <Input
+                    value={form.part_number}
+                    maxLength={80}
+                    placeholder="As printed on the part"
+                    onChange={(e) => setForm({ ...form, part_number: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Brand</Label>
+                  <Input
+                    value={form.brand}
+                    maxLength={80}
+                    placeholder="Denso, Bosch, NGK…"
+                    onChange={(e) => setForm({ ...form, brand: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Shelf or rack</Label>
+                  <Input
+                    value={form.shelf_location}
+                    maxLength={60}
+                    placeholder="Where it actually is — B4, rack 2"
+                    onChange={(e) => setForm({ ...form, shelf_location: e.target.value })}
+                  />
+                </div>
+              </>
             )}
             {hasFeature(industry, "service_item") && (
               <label className="flex items-center gap-2 sm:col-span-2">

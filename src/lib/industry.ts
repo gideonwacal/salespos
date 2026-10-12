@@ -19,6 +19,7 @@ export type IndustryId =
   | "clinic"
   | "medical_centre"
   | "hospital"
+  | "autoparts"
   | "hardware"
   | "restaurant"
   | "electronics"
@@ -54,7 +55,11 @@ export type ProductFeature =
   | "barcode"
   | "unit_of_measure"
   /** Things sold that were never on a shelf: a consultation, a lab test, a bed-night. */
-  | "service_item";
+  | "service_item"
+  /** A manufacturer part number, distinct from the shop own barcode. */
+  | "part_number"
+  /** Which vehicles a part fits. The reason a spare parts shop is its own trade. */
+  | "vehicle_fit";
 
 export type IndustryProfile = {
   id: IndustryId;
@@ -305,6 +310,51 @@ const PROFILES: IndustryProfile[] = [
     ],
   },
   {
+    id: "autoparts",
+    family: "trade",
+    label: "Auto spare parts",
+    blurb: "Find parts by vehicle, with part numbers, brands and shelf locations.",
+    terms: {
+      products: "Spare parts",
+      product: "part",
+      inventory: "Parts catalogue",
+      category: "Section",
+    },
+    // Selling the wrong part is this trade's expensive mistake: it comes back,
+    // the customer is cross, and the shelf is short until it does. Fitment is
+    // what prevents it, which is why it is a feature rather than a note field.
+    features: [
+      "wholesale_price",
+      "bulk_pricing",
+      "barcode",
+      "part_number",
+      "vehicle_fit",
+      "service_item",
+    ],
+    categories: [
+      "Engine",
+      "Transmission & Clutch",
+      "Suspension & Steering",
+      "Brakes",
+      "Electrical & Ignition",
+      "Filters",
+      "Cooling & Heating",
+      "Belts & Hoses",
+      "Exhaust",
+      "Body & Panels",
+      "Lighting & Mirrors",
+      "Tyres, Wheels & Rims",
+      "Lubricants & Fluids",
+      "Bearings & Seals",
+      "Accessories",
+      "Fitting & Labour",
+    ],
+    defaults: { low_stock_alerts: true, expiry_alerts: false },
+    units: ["piece", "set", "pair", "litre", "metre", "box"],
+    // Fitting a part is charged like a part but was never on the shelf.
+    serviceCategories: ["Fitting & Labour"],
+  },
+  {
     id: "hardware",
     family: "trade",
     label: "Hardware & Building",
@@ -470,6 +520,11 @@ export function resolveIndustry(value: string | null | undefined): IndustryProfi
     hardware: "hardware",
     electronics: "electronics",
     "restaurant / bar": "restaurant",
+    "spare parts": "autoparts",
+    "auto parts": "autoparts",
+    "auto spare parts": "autoparts",
+    "car parts": "autoparts",
+    garage: "autoparts",
     other: "general",
   };
   return BY_ID.get(legacy[raw] ?? "wholesale")!;

@@ -8,7 +8,7 @@ from django.test import TestCase
 from rest_framework.test import APIClient
 
 from apps.accounts.models import Membership, User, Workspace
-from apps.inventory.models import Product, StockTransaction
+from apps.inventory.models import Product, StockTransaction, VehicleFit
 from apps.inventory.services import (
     clear_store,
     low_stock_products,
@@ -300,3 +300,108 @@ class ServiceItemInventoryTests(TestCase):
     def test_a_service_is_never_low_stock(self):
         names = [p.name for p in low_stock_products(self.workspace)]
         self.assertEqual(names, ["Examination gloves"])
+
+
+class VehicleFitTests(TestCase):
+    """Fitment: the check that stops a spare parts shop selling the wrong part."""
+
+    def setUp(self):
+        self.workspace = Workspace.objects.create(name="Kampala Auto Spares")
+        self.owner = User.objects.create_user(
+            email="owner@spares.com", password="sup3rsecret!"
+        )
+        Membership.objects.create(user=self.owner, workspace=self.workspace, role="owner")
+        self.filter = Product.objects.create(
+            workspace=self.workspace,
+            name="Oil filter",
+            part_number="90915-YZZD4",
+            brand="Denso",
+            shelf_location="B4",
+            unit_selling_price=Decimal("18000"),
+            stock_quantity=12,
+        )
+        self.client = APIClient()
+        self.client.force_authenticate(self.owner)
+        self.headers = {"HTTP_X_WORKSPACE": str(self.workspace.id)}
+
+    def fit(self, **kwargs):
+        return VehicleFit.objects.create(
+            workspace=self.workspace, product=self.filter, **kwargs
+        )
+
+    def test_an_open_ended_range_covers_everything_since(self):
+        """A part listed from 2002 with no end date fits 2020 — that is how
+        catalogues are written, and treating a blank end as 'never' would hide
+        most of the shelf."""
+        fitment = self.fit(make="Toyota", model="Corolla", year_from=2002)
+        self.assertTrue(fitment.covers_year(2002))
+        self.assertTrue(fitment.covers_year(2020))
+        self.assertFalse(fitment.covers_year(2001))
+
+    def test_a_closed_range_excludes_both_ends_properly(self):
+        fitment = self.fit(make="Toyota", model="Corolla", year_from=2002, year_to=2008)
+        self.assertTrue(fitment.covers_year(2002))
+        self.assertTrue(fitment.covers_year(2008))
+        self.assertFalse(fitment.covers_year(2009))
+
+    def test_the_finder_matches_on_make_model_and_year(self):
+        self.fit(make="Toyota", model="Corolla", year_from=2002, year_to=2008)
+        self.fit(make="Nissan", model="Sunny", year_from=1998)
+
+        hit = self.client.get(
+            "/api/vehicle-fits/?fit_make=Toyota&fit_model=Corolla&fit_year=2005",
+            **self.headers,
+        )
+        self.assertEqual(hit.status_code, 200)
+        self.assertEqual(len(hit.data["results"]), 1)
+
+        miss = self.client.get(
+            "/api/vehicle-fits/?fit_make=Toyota&fit_model=Corolla&fit_year=2012",
+            **self.headers,
+        )
+        self.assertEqual(len(miss.data["results"]), 0)
+
+    def test_the_picker_only_offers_what_the_shop_stocks_for(self):
+        self.fit(make="Toyota", model="Corolla")
+        self.fit(make="Toyota", model="Hiace")
+
+        response = self.client.get("/api/vehicle-fits/makes/", **self.headers)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.data, [{"make": "Toyota", "models": ["Corolla", "Hiace"]}]
+        )
+
+    def test_a_backwards_year_range_is_refused(self):
+        """It would match nothing, so it is a typo rather than a filter."""
+        response = self.client.post(
+            "/api/vehicle-fits/",
+            {
+                "product_id": str(self.filter.id),
+                "make": "Toyota",
+                "year_from": 2010,
+                "year_to": 2004,
+            },
+            format="json",
+            **self.headers,
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_a_part_carries_its_fitments_and_its_shelf(self):
+        self.fit(make="Toyota", model="Corolla", year_from=2002, year_to=2008)
+        response = self.client.get(f"/api/products/{self.filter.id}/", **self.headers)
+        self.assertEqual(response.data["part_number"], "90915-YZZD4")
+        self.assertEqual(response.data["shelf_location"], "B4")
+        self.assertEqual(len(response.data["fits"]), 1)
+
+    def test_another_workspace_cannot_see_these_fitments(self):
+        self.fit(make="Toyota", model="Corolla")
+        other = Workspace.objects.create(name="Someone Else")
+        stranger = User.objects.create_user(email="other@x.com", password="sup3rsecret!")
+        Membership.objects.create(user=stranger, workspace=other, role="owner")
+
+        client = APIClient()
+        client.force_authenticate(stranger)
+        response = client.get(
+            "/api/vehicle-fits/", HTTP_X_WORKSPACE=str(other.id)
+        )
+        self.assertEqual(len(response.data["results"]), 0)

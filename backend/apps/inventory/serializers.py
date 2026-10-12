@@ -1,10 +1,48 @@
 from rest_framework import serializers
 
-from apps.inventory.models import DamageReport, Product, StockTransaction
+from apps.inventory.models import DamageReport, Product, StockTransaction, VehicleFit
+
+
+class VehicleFitSerializer(serializers.ModelSerializer):
+    product_id = serializers.PrimaryKeyRelatedField(
+        source="product", queryset=Product.objects.all()
+    )
+
+    class Meta:
+        model = VehicleFit
+        fields = [
+            "id",
+            "product_id",
+            "make",
+            "model",
+            "year_from",
+            "year_to",
+            "engine",
+            "note",
+            "created_at",
+        ]
+        read_only_fields = ["id", "created_at"]
+
+    def validate(self, attrs):
+        """A range that runs backwards is a typo, and it would match nothing."""
+        start = attrs.get("year_from")
+        end = attrs.get("year_to")
+        if start and end and start > end:
+            raise serializers.ValidationError({"year_to": "The last year is before the first."})
+        return attrs
+
+    def validate_product(self, value):
+        workspace = self.context["request"].workspace
+        if value.workspace_id != workspace.id:
+            raise serializers.ValidationError("That part is not in this workspace.")
+        return value
 
 
 class ProductSerializer(serializers.ModelSerializer):
     low_stock = serializers.BooleanField(read_only=True)
+    # Nested read-only: the catalogue shows what a part fits, and fitments are
+    # added and removed through their own endpoint.
+    fits = VehicleFitSerializer(many=True, read_only=True)
     # Sent as a name so the dashboard does not have to join against the staff
     # list to say who added an item.
     created_by_name = serializers.CharField(
@@ -29,6 +67,10 @@ class ProductSerializer(serializers.ModelSerializer):
             "batch_number",
             "prescription_only",
             "is_service",
+            "part_number",
+            "brand",
+            "shelf_location",
+            "fits",
             "is_glass_bottle",
             "bottles_per_unit",
             "bulk_min_qty",

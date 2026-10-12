@@ -28,6 +28,7 @@ import { Route as AuthenticatedStaffRouteImport } from './routes/_authenticated/
 import { Route as AuthenticatedStocktakeRouteImport } from './routes/_authenticated/stocktake'
 import { Route as AuthenticatedExpiryRouteImport } from './routes/_authenticated/expiry'
 import { Route as AuthenticatedSectionsRouteImport } from './routes/_authenticated/sections'
+import { Route as AuthenticatedFitmentRouteImport } from './routes/_authenticated/fitment'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -123,6 +124,11 @@ const AuthenticatedSectionsRoute = AuthenticatedSectionsRouteImport.update({
   path: '/sections',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedFitmentRoute = AuthenticatedFitmentRouteImport.update({
+  id: '/fitment',
+  path: '/fitment',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -143,6 +149,7 @@ export interface FileRoutesByFullPath {
   '/stocktake': typeof AuthenticatedStocktakeRoute
   '/expiry': typeof AuthenticatedExpiryRoute
   '/sections': typeof AuthenticatedSectionsRoute
+  '/fitment': typeof AuthenticatedFitmentRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -163,6 +170,7 @@ export interface FileRoutesByTo {
   '/stocktake': typeof AuthenticatedStocktakeRoute
   '/expiry': typeof AuthenticatedExpiryRoute
   '/sections': typeof AuthenticatedSectionsRoute
+  '/fitment': typeof AuthenticatedFitmentRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -185,6 +193,7 @@ export interface FileRoutesById {
   '/_authenticated/stocktake': typeof AuthenticatedStocktakeRoute
   '/_authenticated/expiry': typeof AuthenticatedExpiryRoute
   '/_authenticated/sections': typeof AuthenticatedSectionsRoute
+  '/_authenticated/fitment': typeof AuthenticatedFitmentRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -207,6 +216,7 @@ export interface FileRouteTypes {
     | '/stocktake'
     | '/expiry'
     | '/sections'
+    | '/fitment'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -227,6 +237,7 @@ export interface FileRouteTypes {
     | '/stocktake'
     | '/expiry'
     | '/sections'
+    | '/fitment'
   id:
     | '__root__'
     | '/'
@@ -248,6 +259,7 @@ export interface FileRouteTypes {
     | '/_authenticated/stocktake'
     | '/_authenticated/expiry'
     | '/_authenticated/sections'
+    | '/_authenticated/fitment'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -392,6 +404,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedSectionsRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/fitment': {
+      id: '/_authenticated/fitment'
+      path: '/fitment'
+      fullPath: '/fitment'
+      preLoaderRoute: typeof AuthenticatedFitmentRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
   }
 }
 
@@ -411,6 +430,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedStocktakeRoute: typeof AuthenticatedStocktakeRoute
   AuthenticatedExpiryRoute: typeof AuthenticatedExpiryRoute
   AuthenticatedSectionsRoute: typeof AuthenticatedSectionsRoute
+  AuthenticatedFitmentRoute: typeof AuthenticatedFitmentRoute
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
@@ -429,6 +449,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedStocktakeRoute: AuthenticatedStocktakeRoute,
   AuthenticatedExpiryRoute: AuthenticatedExpiryRoute,
   AuthenticatedSectionsRoute: AuthenticatedSectionsRoute,
+  AuthenticatedFitmentRoute: AuthenticatedFitmentRoute,
 }
 
 const AuthenticatedRouteRouteWithChildren =

@@ -1,14 +1,16 @@
 from rest_framework import status
+from django.db.models import Q
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 
 from apps.core.tenancy import WorkspaceViewSet
-from apps.inventory.models import DamageReport, Product, StockTransaction
+from apps.inventory.models import DamageReport, Product, StockTransaction, VehicleFit
 from apps.inventory.serializers import (
     DamageReportSerializer,
     ProductSerializer,
     StockTransactionSerializer,
+    VehicleFitSerializer,
 )
 from apps.inventory.services import (
     clear_store,
@@ -66,6 +68,66 @@ class ProductViewSet(WorkspaceViewSet):
 
         return Response(
             clear_store(workspace=request.workspace, mode=mode, performed_by=request.user)
+        )
+
+
+class VehicleFitViewSet(WorkspaceViewSet):
+    """Which vehicles a part fits.
+
+    Listing is also the finder: ask for a make, a model and a year, and what
+    comes back is the fitments that cover it — with the part nested, so the
+    counter has the price and the shelf without a second request.
+    """
+
+    queryset = VehicleFit.objects.select_related("product").all()
+    serializer_class = VehicleFitSerializer
+    filterset_fields = ["product", "make"]
+    search_fields = ["make", "model", "engine", "product__name", "product__part_number"]
+    ordering_fields = ["make", "model", "created_at"]
+
+    def get_queryset(self):
+        rows = super().get_queryset()
+
+        make = self.request.query_params.get("fit_make", "").strip()
+        model = self.request.query_params.get("fit_model", "").strip()
+        if make:
+            rows = rows.filter(make__iexact=make)
+        if model:
+            rows = rows.filter(model__icontains=model)
+
+        year = self.request.query_params.get("fit_year", "").strip()
+        if year.isdigit():
+            # An open end means open: a part listed from 2002 with no end date
+            # fits everything since, which is how catalogues are written.
+            value = int(year)
+            rows = rows.filter(
+                Q(year_from__isnull=True) | Q(year_from__lte=value)
+            ).filter(Q(year_to__isnull=True) | Q(year_to__gte=value))
+
+        return rows
+
+    @action(detail=False, methods=["get"])
+    def makes(self, request):
+        """The makes and models this shop actually stocks for.
+
+        Built from the fitments rather than a list of every car ever sold, so
+        the picker only ever offers something that will return parts.
+        """
+        rows = (
+            VehicleFit.objects.filter(workspace=request.workspace)
+            .values_list("make", "model")
+            .distinct()
+        )
+        catalogue = {}
+        for make, model in rows:
+            catalogue.setdefault(make, set())
+            if model:
+                catalogue[make].add(model)
+        return Response(
+            [
+                {"make": make, "models": sorted(models)}
+                for make, models in sorted(catalogue.items())
+            ]
         )
 
 

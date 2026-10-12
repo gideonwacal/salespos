@@ -454,6 +454,29 @@ function products(industry: IndustryProfile): TransferSchema {
       example: "yes",
     });
   }
+  if (hasFeature(industry, "part_number")) {
+    columns.push({
+      key: "part_number",
+      label: "Part number",
+      kind: "text",
+      aliases: ["part no", "part #", "oem", "oem number", "ref"],
+      example: "90915-YZZD4",
+    });
+    columns.push({
+      key: "brand",
+      label: "Brand",
+      kind: "text",
+      aliases: ["make", "manufacturer"],
+      example: "Denso",
+    });
+    columns.push({
+      key: "shelf_location",
+      label: "Shelf",
+      kind: "text",
+      aliases: ["rack", "location", "bin", "shelf location"],
+      example: "B4",
+    });
+  }
   if (hasFeature(industry, "service_item")) {
     columns.push({
       key: "is_service",

@@ -56,6 +56,14 @@ class Product(WorkspaceScoped):
     # the moment stock reads zero, which for a service it always does.
     is_service = models.BooleanField(default=False)
 
+    # Spare parts. A barcode is the shop's own label; a part number is the
+    # manufacturer's, and it is what a mechanic rings up asking for.
+    part_number = models.CharField(max_length=80, blank=True, default="")
+    brand = models.CharField(max_length=80, blank=True, default="")
+    # Where it physically is. A catalogue that cannot tell you which rack is
+    # a catalogue someone still has to walk the shop for.
+    shelf_location = models.CharField(max_length=60, blank=True, default="")
+
     class Meta:
         db_table = "products"
         ordering = ["name"]
@@ -70,6 +78,55 @@ class Product(WorkspaceScoped):
     @property
     def low_stock(self) -> bool:
         return self.stock_quantity <= self.reorder_level
+
+
+class VehicleFit(WorkspaceScoped):
+    """One vehicle a part fits.
+
+    A row per fitment rather than columns on the product, because fitment is
+    genuinely many-to-many: one filter fits a dozen models, and squeezing that
+    into make/model fields on the part would either lose most of it or mean
+    stocking the same filter a dozen times.
+
+    Years are a range because that is how a part is listed — "Corolla 2002 to
+    2008" — and both ends are optional, since plenty of parts are sold as
+    fitting a model with no year qualifier at all.
+    """
+
+    product = models.ForeignKey(
+        Product, on_delete=models.CASCADE, related_name="fits"
+    )
+    make = models.CharField(max_length=60)
+    model = models.CharField(max_length=80, blank=True, default="")
+    year_from = models.PositiveSmallIntegerField(null=True, blank=True)
+    year_to = models.PositiveSmallIntegerField(null=True, blank=True)
+    engine = models.CharField(max_length=60, blank=True, default="")
+    note = models.CharField(max_length=160, blank=True, default="")
+
+    class Meta:
+        db_table = "vehicle_fits"
+        ordering = ["make", "model", "year_from"]
+        indexes = [
+            models.Index(fields=["workspace", "make", "model"]),
+        ]
+
+    def __str__(self):
+        years = ""
+        if self.year_from or self.year_to:
+            years = f" {self.year_from or ''}-{self.year_to or ''}"
+        return f"{self.make} {self.model}{years}".strip()
+
+    def covers_year(self, year: int) -> bool:
+        """Is this fitment valid for that model year?
+
+        An open end means open: a part listed from 2002 with no end date fits
+        everything since, which is how parts catalogues are actually written.
+        """
+        if self.year_from and year < self.year_from:
+            return False
+        if self.year_to and year > self.year_to:
+            return False
+        return True
 
 
 class StockTransaction(WorkspaceScoped):

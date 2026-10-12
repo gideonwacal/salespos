@@ -20,6 +20,7 @@ import {
   FileSpreadsheet,
   CalendarClock,
   Layers,
+  Car,
 } from "lucide-react";
 import { isDemo, stopDemo, subscribeStore, planById, canUseModule, trialStatus, type ModuleId } from "@/lib/demo";
 import { startTour } from "@/lib/tour";
@@ -56,6 +57,15 @@ const NAV: {
     owner: true,
     manager: true,
     module: "inventory",
+  },
+  {
+    to: "/fitment",
+    label: "Find by vehicle",
+    icon: Car,
+    owner: true,
+    manager: true,
+    module: "inventory",
+    feature: "vehicle_fit",
   },
   {
     to: "/expiry",

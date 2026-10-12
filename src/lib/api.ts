@@ -246,6 +246,7 @@ export const ENDPOINTS: Record<string, string> = {
   products: "products",
   stock_transactions: "stock-transactions",
   damage_reports: "damage-reports",
+  vehicle_fits: "vehicle-fits",
   sales: "sales",
   sale_items: "sale-items",
   expenses: "expenses",

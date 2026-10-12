@@ -14,6 +14,7 @@ const ROUTE_MODULES: [string, ModuleId][] = [
   ["/inventory", "inventory"],
   ["/stocktake", "inventory"],
   ["/expiry", "inventory"],
+  ["/fitment", "inventory"],
   ["/sections", "reports"],
   ["/quotations", "quotations"],
   ["/debtors", "debtors"],

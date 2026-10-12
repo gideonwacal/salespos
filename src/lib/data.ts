@@ -21,6 +21,13 @@ export type Product = {
   prescription_only?: boolean;
   /** Charged like goods but never stocked: a consultation, a lab test, a delivery. */
   is_service?: boolean;
+  /* Spare parts. A barcode is the shop own label; a part number is the
+     manufacturer one, and it is what a mechanic asks for by name. */
+  part_number?: string;
+  brand?: string;
+  shelf_location?: string;
+  /** Which vehicles this part fits. Read-only on the product. */
+  fits?: VehicleFit[];
   is_glass_bottle: boolean;
   bottles_per_unit: number;
   bulk_min_qty: number;
@@ -29,6 +36,19 @@ export type Product = {
   /** Who put the item on the system. Absent on rows created before this. */
   created_by?: string | null;
   created_by_name?: string | null;
+};
+
+/** One vehicle a part fits. Many per part: a filter fits a dozen models. */
+export type VehicleFit = {
+  id: string;
+  product_id: string;
+  make: string;
+  model: string;
+  year_from: number | null;
+  year_to: number | null;
+  engine: string;
+  note: string;
+  created_at: string;
 };
 
 export type DamageReport = {
@@ -212,6 +232,12 @@ export function useProducts() {
     // office, the cashier at the till.
     refreshMs: 45_000,
   });
+}
+
+/** Every fitment in the shop. Small enough to filter in the browser, and the
+ *  finder needs to count matches across all of them at once. */
+export function useVehicleFits() {
+  return useTable<VehicleFit>("vehicle_fits", "vehicle_fits", { orderBy: "make", ascending: true });
 }
 
 export function useDamageReports() {
