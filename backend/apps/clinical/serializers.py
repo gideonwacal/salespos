@@ -1,7 +1,9 @@
-from django.db.models import Max
+from django.db import transaction
 from rest_framework import serializers
 
+from apps.accounts.models import Workspace
 from apps.clinical.models import Patient, Prescription, Visit
+from apps.inventory.models import Product
 
 
 class PatientSerializer(serializers.ModelSerializer):
@@ -35,19 +37,17 @@ class PatientSerializer(serializers.ModelSerializer):
     def get_visit_count(self, obj) -> int:
         return obj.visits.count()
 
+    @transaction.atomic
     def create(self, validated_data):
         workspace = validated_data["workspace"]
-        # Per business, and continuing from the highest already issued rather
-        # than counting rows — a deleted patient must not hand their number on.
-        highest = (
-            Patient.objects.filter(workspace=workspace)
-            .aggregate(top=Max("patient_number"))
-            .get("top")
-        )
-        number = 1
-        if highest and highest[1:].isdigit():
-            number = int(highest[1:]) + 1
-        validated_data["patient_number"] = f"P{number:05d}"
+        # Counted on the workspace, not derived from the table: the highest
+        # number in the table goes down when a patient is deleted, and the next
+        # person through the door would be handed their card number.
+        locked = Workspace.objects.select_for_update().get(pk=workspace.pk)
+        locked.patient_counter += 1
+        locked.save(update_fields=["patient_counter"])
+
+        validated_data["patient_number"] = f"P{locked.patient_counter:05d}"
         return super().create(validated_data)
 
 
@@ -55,7 +55,10 @@ class PrescriptionSerializer(serializers.ModelSerializer):
     visit_id = serializers.PrimaryKeyRelatedField(source="visit", queryset=Visit.objects.all())
     patient_id = serializers.PrimaryKeyRelatedField(source="patient", read_only=True)
     product_id = serializers.PrimaryKeyRelatedField(
-        source="product", queryset=None, required=False, allow_null=True
+        source="product",
+        queryset=Product.objects.all(),
+        required=False,
+        allow_null=True,
     )
     outstanding = serializers.IntegerField(read_only=True)
 
@@ -87,12 +90,6 @@ class PrescriptionSerializer(serializers.ModelSerializer):
             "dispensed_by",
             "outstanding",
         ]
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        from apps.inventory.models import Product
-
-        self.fields["product_id"].queryset = Product.objects.all()
 
     def validate_visit(self, value):
         workspace = self.context["request"].workspace

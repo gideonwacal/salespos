@@ -126,7 +126,6 @@ export async function signIn(email: string, password: string) {
 /* ------------------------------------------------------------------ */
 
 export type BusinessState =
-  | "unreviewed"
   | "trial"
   | "paying"
   | "expired"

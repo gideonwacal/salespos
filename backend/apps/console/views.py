@@ -56,10 +56,9 @@ def limit_offset(request, default=50, maximum=500):
 
 
 def billing_state(workspace, now):
-    # Unreviewed comes first on purpose: a business nobody has looked at is the
-    # thing to act on, whatever its trial says.
-    if workspace.reviewed_at is None:
-        return "unreviewed"
+    # Only about money. Whether anybody has looked at this business is a
+    # different question with a different answer — it rides on reviewed_at, and
+    # folding it in here meant a suspended business reported "unreviewed".
     if workspace.access == "suspended":
         return "suspended"
     # Nobody is being charged on this deployment, so no business can be on a
@@ -127,16 +126,12 @@ class OverviewView(ConsoleView):
         workspaces = list(Workspace.objects.all())
         # Every state billing_state can return has to have a bucket here, or
         # counting them raises a KeyError and the whole page 500s.
-        states = {
-            "unreviewed": 0,
-            "trial": 0,
-            "paying": 0,
-            "expired": 0,
-            "free": 0,
-            "suspended": 0,
-        }
+        states = {"trial": 0, "paying": 0, "expired": 0, "free": 0, "suspended": 0}
         for workspace in workspaces:
             states[billing_state(workspace, now)] += 1
+        # Counted beside them rather than among them: a business can be paying
+        # and still be waiting for somebody to look at it.
+        states["unreviewed"] = sum(1 for w in workspaces if w.reviewed_at is None)
 
         approved = SubscriptionPayment.objects.filter(status="approved")
         return Response(
@@ -197,7 +192,12 @@ class BusinessListView(ConsoleView):
         rows = []
         for workspace in queryset:
             state = billing_state(workspace, now)
-            if wanted and state != wanted:
+            # "Needs review" is not a billing state, so it is matched on its
+            # own terms rather than against one.
+            if wanted == "unreviewed":
+                if workspace.reviewed_at is not None:
+                    continue
+            elif wanted and state != wanted:
                 continue
             rows.append(
                 {

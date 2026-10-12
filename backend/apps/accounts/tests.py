@@ -607,8 +607,13 @@ class DefaultPaymentNumberTests(APITestCase):
         self.assertIn("{amount}", mtn["ussd"])
 
 
+@override_settings(BILLING_ENABLED=True)
 class TrialLockTests(APITestCase):
-    """A trial that has run out stops the till, on the server and not just in the browser."""
+    """A trial that has run out stops the till, on the server and not just in the browser.
+
+    Billing is off by default now, so these have to turn it on to have anything
+    to test: with nobody being charged there is nothing to be behind on.
+    """
 
     def setUp(self):
         self.owner = User.objects.create_user(email="owner@shop.com", password="sup3rsecret!")

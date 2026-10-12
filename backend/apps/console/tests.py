@@ -1,10 +1,17 @@
+from django.test import override_settings
 from rest_framework.test import APITestCase
 
 from apps.accounts.models import Membership, SubscriptionPayment, User, Workspace
 from apps.console.models import ActivityLog
 
 
+@override_settings(BILLING_ENABLED=True)
 class ConsoleTests(APITestCase):
+    """The platform owner's view of who is paying, which needs charging to be on.
+
+    With billing switched off every business reads "free", correctly and
+    uselessly for a test about telling them apart.
+    """
     def setUp(self):
         self.boss = User.objects.create_superuser(email="boss@salespos.app", password="sup3rsecret!")
         self.owner = User.objects.create_user(email="owner@shop.com", password="sup3rsecret!")

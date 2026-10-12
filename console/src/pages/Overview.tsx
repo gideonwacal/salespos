@@ -5,7 +5,6 @@ import { Link } from "../router";
 import { Failed, Feed, Loading, Metric, PageTitle, Panel, STATE_LABEL } from "../ui";
 
 const STATES: BusinessState[] = [
-  "unreviewed",
   "trial",
   "paying",
   "expired",

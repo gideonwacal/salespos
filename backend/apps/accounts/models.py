@@ -147,6 +147,13 @@ class Workspace(models.Model):
     # somebody does. It gates nothing on its own — a business that signs up at
     # midnight should not wait for anyone to wake up — but it is the list that
     # makes sure no business is ever running here unnoticed.
+    # Patient card numbers count up from here and never come back down.
+    # Deriving the next one from the highest in the table hands a deleted
+    # patient's number to the next person through the door, and two files
+    # sharing a number is a mix-up nobody notices until the wrong one is
+    # pulled.
+    patient_counter = models.PositiveIntegerField(default=0)
+
     reviewed_at = models.DateTimeField(null=True, blank=True)
     reviewed_by = models.ForeignKey(
         "User", on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
