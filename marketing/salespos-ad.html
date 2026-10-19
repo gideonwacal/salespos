@@ -1,0 +1,699 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>SalesPos — 40s vertical ad</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+/*
+ * A 40-second 9:16 advertisement, animated in the browser so it can be screen
+ * recorded into an MP4.
+ *
+ * The stage is a fixed 1080x1920 and everything inside it is positioned in
+ * those units, so what gets recorded is the real resolution regardless of the
+ * screen it is previewed on. The page scales the stage down to fit; recording
+ * at 100% is what gives a clean 1080x1920 capture.
+ *
+ * One clock drives everything (see the script): scenes are switched by a data
+ * attribute and CSS animates whatever has just become active. That keeps the
+ * timing identical on every play, which a recording depends on.
+ *
+ * Colours are SalesPos's own tokens, converted from oklch so no build step is
+ * needed to open this file.
+ */
+:root {
+  --brand: #1e2a44;
+  --brand-deep: #121a2b;
+  --ink: #0b1120;
+  --paper: #f7f9fc;
+  --line: #dfe5ef;
+  --muted: #7a8699;
+  --success: #15a97c;
+  --success-soft: #e6f7f1;
+  --warning: #d98613;
+  --warning-soft: #fdf3e2;
+  --danger: #d6456a;
+  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, Helvetica, Arial, sans-serif;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: #05070d;
+  font-family: var(--font);
+  display: grid;
+  place-items: center;
+  min-height: 100vh;
+  overflow: hidden;
+}
+
+/* The recording surface. Everything is authored in 1080x1920 units. */
+#stage {
+  position: relative;
+  width: 1080px;
+  height: 1920px;
+  overflow: hidden;
+  background:
+    radial-gradient(120% 70% at 50% 0%, #2a3a5e 0%, transparent 60%),
+    radial-gradient(100% 60% at 50% 100%, #16233d 0%, transparent 55%),
+    var(--brand-deep);
+  transform-origin: top left;
+  color: #fff;
+}
+
+/* A faint grain so the flat background does not band on compression. */
+#stage::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.035;
+  background-image: radial-gradient(#fff 1px, transparent 1px);
+  background-size: 3px 3px;
+}
+
+.scene {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  padding: 0 90px;
+  opacity: 0;
+  pointer-events: none;
+}
+.scene[data-active] { opacity: 1; }
+
+/* ---------- typography ---------- */
+
+.kicker {
+  font-size: 30px;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  color: #8fa3c4;
+  font-weight: 700;
+}
+
+.headline {
+  font-size: 86px;
+  line-height: 1.04;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  text-align: center;
+}
+
+.headline .w {
+  display: inline-block;
+  opacity: 0;
+  filter: blur(14px);
+  transform: translateY(26px);
+}
+.scene[data-active] .headline .w {
+  animation: word 0.62s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+}
+@keyframes word {
+  to { opacity: 1; filter: blur(0); transform: none; }
+}
+
+.overlay {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 300px;
+  text-align: center;
+  font-size: 68px;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  opacity: 0;
+}
+.overlay.second { bottom: 300px; }
+.scene[data-active] .overlay {
+  animation: overlayIn 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+}
+.scene[data-active] .overlay.second { animation-delay: 3.1s; }
+@keyframes overlayIn {
+  from { opacity: 0; transform: translateY(26px); filter: blur(10px); }
+  to { opacity: 1; transform: none; filter: blur(0); }
+}
+/* The first line steps aside as the second arrives. */
+.scene[data-active] .overlay.first {
+  animation: overlayInOut 3.4s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+}
+@keyframes overlayInOut {
+  0% { opacity: 0; transform: translateY(26px); filter: blur(10px); }
+  14%, 82% { opacity: 1; transform: none; filter: blur(0); }
+  100% { opacity: 0; transform: translateY(-20px); filter: blur(8px); }
+}
+
+.accent { color: #7fd8ba; }
+
+/* ---------- device mockups ---------- */
+
+.laptop {
+  width: 900px;
+  opacity: 0;
+  transform: perspective(2200px) rotateX(16deg) translateY(90px) scale(0.92);
+}
+.scene[data-active] .laptop {
+  animation: laptopIn 1.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+@keyframes laptopIn {
+  to { opacity: 1; transform: perspective(2200px) rotateX(5deg) translateY(0) scale(1); }
+}
+
+/* Scenes 2 to 4 push in slowly, the way a commercial holds on a product. */
+.scene.push .laptop {
+  opacity: 1;
+  transform: perspective(2400px) rotateX(3deg) scale(1);
+  animation: push 8s linear forwards;
+}
+@keyframes push {
+  from { transform: perspective(2400px) rotateX(3deg) scale(1); }
+  to { transform: perspective(2400px) rotateX(0deg) scale(1.07); }
+}
+
+.screen {
+  background: var(--paper);
+  border-radius: 22px;
+  border: 14px solid #0d1526;
+  box-shadow: 0 60px 120px rgba(0, 0, 0, 0.55), 0 0 0 2px rgba(255, 255, 255, 0.06);
+  overflow: hidden;
+  color: var(--ink);
+  text-align: left;
+}
+
+.base {
+  width: 1020px;
+  height: 26px;
+  margin: 0 auto;
+  border-radius: 0 0 22px 22px;
+  background: linear-gradient(#2a3450, #161e30);
+  box-shadow: 0 30px 50px rgba(0, 0, 0, 0.45);
+}
+
+/* ---------- the app, recreated ---------- */
+
+.app-bar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 20px 26px;
+  background: var(--brand);
+  color: #fff;
+}
+.dot { width: 13px; height: 13px; border-radius: 50%; background: #41527a; }
+.app-title { font-weight: 800; font-size: 24px; letter-spacing: 0.01em; }
+.app-sub { margin-left: auto; font-size: 18px; color: #a9b8d4; }
+
+.app-body { padding: 26px; display: grid; gap: 20px; background: var(--paper); }
+
+.kpis { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+.kpi {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 18px 20px;
+  box-shadow: 0 10px 24px rgba(16, 24, 40, 0.05);
+}
+.kpi .label {
+  font-size: 15px;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--muted);
+  font-weight: 700;
+}
+.kpi .value {
+  font-size: 40px;
+  font-weight: 800;
+  margin-top: 6px;
+  font-variant-numeric: tabular-nums;
+}
+.kpi .value.good { color: var(--success); }
+.kpi .value.warn { color: var(--warning); }
+
+.panel {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  overflow: hidden;
+}
+.panel h3 {
+  font-size: 19px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--line);
+  font-weight: 800;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 15px 20px;
+  border-bottom: 1px solid #eef2f7;
+  font-size: 19px;
+}
+.row:last-child { border-bottom: 0; }
+.row .grow { flex: 1; min-width: 0; }
+.row .sub { display: block; font-size: 15px; color: var(--muted); margin-top: 3px; }
+.row .amt { font-weight: 800; font-variant-numeric: tabular-nums; }
+
+/* Transactions dropping in one by one, as a till fills up. */
+.row.feed { opacity: 0; transform: translateY(-10px); }
+.scene[data-active] .row.feed { animation: dropIn 0.45s cubic-bezier(0.2, 0.8, 0.2, 1) forwards; }
+@keyframes dropIn { to { opacity: 1; transform: none; } }
+
+.pill {
+  font-size: 14px;
+  font-weight: 800;
+  padding: 5px 11px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.pill.ok { background: var(--success-soft); color: var(--success); }
+.pill.low { background: var(--warning-soft); color: var(--warning); }
+.pill.out { background: #fdeaef; color: var(--danger); }
+
+/* The low-stock alert sliding over the stock list. */
+.toast {
+  position: absolute;
+  right: 26px;
+  bottom: 26px;
+  background: #fff;
+  border: 1px solid var(--warning);
+  border-left: 7px solid var(--warning);
+  border-radius: 14px;
+  padding: 16px 20px;
+  box-shadow: 0 24px 50px rgba(16, 24, 40, 0.18);
+  opacity: 0;
+  transform: translateX(40px);
+  color: var(--ink);
+  max-width: 460px;
+}
+.scene[data-active] .toast { animation: toastIn 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) 4.4s forwards; }
+@keyframes toastIn { to { opacity: 1; transform: none; } }
+.toast b { display: block; font-size: 20px; }
+.toast span { font-size: 16px; color: var(--muted); }
+
+/* Profit bars. */
+.bars { display: flex; align-items: flex-end; gap: 26px; height: 230px; padding: 24px 26px 0; }
+.bar { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; height: 100%; }
+.bar .fill {
+  border-radius: 12px 12px 0 0;
+  height: 0;
+  background: #c9d3e4;
+}
+.bar.revenue .fill { background: #5b7cb8; }
+.bar.expenses .fill { background: #9aa8c0; }
+.bar.profit .fill { background: linear-gradient(180deg, #19c08c, #0f8f68); }
+.scene[data-active] .bar .fill {
+  animation: grow 1.5s cubic-bezier(0.16, 1, 0.3, 1) 0.4s forwards;
+}
+@keyframes grow { to { height: var(--h); } }
+.bar .cap {
+  text-align: center;
+  font-size: 16px;
+  color: var(--muted);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding-top: 12px;
+}
+
+/* The profit figure is the point of scene 4, so it gets the spotlight. */
+.profit-call {
+  margin: 10px 26px 26px;
+  background: linear-gradient(135deg, #0f8f68, #15a97c);
+  border-radius: 18px;
+  padding: 22px 26px;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  opacity: 0;
+  transform: scale(0.96);
+}
+.scene[data-active] .profit-call {
+  animation: pop 0.7s cubic-bezier(0.16, 1, 0.3, 1) 1.9s forwards;
+}
+@keyframes pop { to { opacity: 1; transform: none; } }
+.profit-call .l { font-size: 19px; letter-spacing: 0.09em; text-transform: uppercase; font-weight: 800; opacity: 0.85; }
+.profit-call .v { font-size: 52px; font-weight: 800; font-variant-numeric: tabular-nums; }
+
+/* ---------- phone ---------- */
+
+.phone {
+  width: 500px;
+  border-radius: 56px;
+  border: 14px solid #0d1526;
+  background: var(--paper);
+  overflow: hidden;
+  box-shadow: 0 60px 120px rgba(0, 0, 0, 0.6), 0 0 0 2px rgba(255, 255, 255, 0.07);
+  opacity: 0;
+}
+.scene[data-active] .phone {
+  animation: orbit 6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+@keyframes orbit {
+  0% { opacity: 0; transform: perspective(1800px) rotateY(26deg) scale(0.9); }
+  22% { opacity: 1; }
+  100% { opacity: 1; transform: perspective(1800px) rotateY(-12deg) scale(1.02); }
+}
+.notch {
+  width: 160px;
+  height: 26px;
+  background: #0d1526;
+  border-radius: 0 0 18px 18px;
+  margin: 0 auto;
+}
+
+/* ---------- closing frame ---------- */
+
+.wordmark {
+  font-size: 118px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  opacity: 0;
+}
+.scene[data-active] .wordmark { animation: overlayIn 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+
+.tagline {
+  margin-top: 26px;
+  font-size: 34px;
+  letter-spacing: 0.24em;
+  color: #9db2d4;
+  font-weight: 700;
+  opacity: 0;
+}
+.scene[data-active] .tagline { animation: overlayIn 0.7s ease-out 0.9s forwards; }
+
+.cta {
+  margin-top: 70px;
+  padding: 26px 56px;
+  border-radius: 999px;
+  background: #fff;
+  color: var(--brand);
+  font-size: 40px;
+  font-weight: 800;
+  opacity: 0;
+}
+.scene[data-active] .cta { animation: pop 0.6s cubic-bezier(0.16, 1, 0.3, 1) 1.7s forwards; }
+
+.url {
+  margin-top: 30px;
+  font-size: 32px;
+  color: #a9bdda;
+  letter-spacing: 0.03em;
+  opacity: 0;
+}
+.scene[data-active] .url { animation: overlayIn 0.6s ease-out 2.3s forwards; }
+
+/* A sweep of light across the closing frame, then gone. */
+.sheen {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(105deg, transparent 38%, rgba(255, 255, 255, 0.14) 50%, transparent 62%);
+  transform: translateX(-100%);
+}
+.scene[data-active] .sheen { animation: sweep 1.6s ease-in-out 1.2s forwards; }
+@keyframes sweep { to { transform: translateX(100%); } }
+
+/* ---------- operator chrome, never recorded ---------- */
+
+#chrome {
+  position: fixed;
+  left: 18px;
+  bottom: 18px;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  font: 600 13px var(--font);
+  color: #8fa3c4;
+  z-index: 10;
+}
+#chrome button {
+  font: inherit;
+  padding: 9px 16px;
+  border-radius: 999px;
+  border: 1px solid #2a3450;
+  background: #121a2b;
+  color: #cfe0ff;
+  cursor: pointer;
+}
+#chrome button:hover { border-color: #4a5f8c; }
+body.recording #chrome { display: none; }
+#clock { font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body>
+
+<div id="stage">
+
+  <!-- 0–5s -->
+  <section class="scene" data-scene="0">
+    <p class="kicker" style="margin-bottom:46px">SalesPos</p>
+    <h1 class="headline" id="hook"></h1>
+  </section>
+
+  <!-- 5–12s -->
+  <section class="scene push" data-scene="1">
+    <div class="laptop">
+      <div class="screen">
+        <div class="app-bar">
+          <span class="dot"></span><span class="app-title">SalesPos</span>
+          <span class="app-sub">Today</span>
+        </div>
+        <div class="app-body">
+          <div class="kpis">
+            <div class="kpi"><p class="label">Sales today</p><p class="value" data-count="2840000" data-prefix="UGX ">UGX 0</p></div>
+            <div class="kpi"><p class="label">Transactions</p><p class="value" data-count="74">0</p></div>
+            <div class="kpi"><p class="label">Gross profit</p><p class="value good" data-count="712000" data-prefix="UGX ">UGX 0</p></div>
+          </div>
+          <div class="panel">
+            <h3>Recent sales</h3>
+            <div class="row feed" style="animation-delay:.6s"><span class="grow">Sugar 50kg Bale <span class="sub">Cash · 2 min ago</span></span><span class="amt">UGX 215,000</span></div>
+            <div class="row feed" style="animation-delay:1.3s"><span class="grow">Cooking Oil 5L × 3 <span class="sub">MoMo · just now</span></span><span class="amt">UGX 117,000</span></div>
+            <div class="row feed" style="animation-delay:2.1s"><span class="grow">Soda Crate (24) <span class="sub">Credit · just now</span></span><span class="amt">UGX 32,000</span></div>
+            <div class="row feed" style="animation-delay:2.9s"><span class="grow">Bar Soap (Carton) <span class="sub">Cash · just now</span></span><span class="amt">UGX 55,000</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="base"></div>
+    <p class="overlay first">TRACK EVERY SALE</p>
+    <p class="overlay second">IN REAL TIME</p>
+  </section>
+
+  <!-- 12–20s -->
+  <section class="scene push" data-scene="2">
+    <div class="laptop" style="position:relative">
+      <div class="screen">
+        <div class="app-bar">
+          <span class="dot"></span><span class="app-title">Inventory</span>
+          <span class="app-sub">148 items</span>
+        </div>
+        <div class="app-body">
+          <div class="panel">
+            <h3>Stock on hand</h3>
+            <div class="row"><span class="grow">Sugar 50kg Bale <span class="sub">General Merchandise</span></span><span class="amt" data-stock="7">7</span><span class="pill ok">In stock</span></div>
+            <div class="row"><span class="grow">Cooking Oil 5L <span class="sub">Household</span></span><span class="amt" data-stock="18" data-drop="3">18</span><span class="pill ok">In stock</span></div>
+            <div class="row"><span class="grow">Bar Soap (Carton) <span class="sub">Household</span></span><span class="amt" data-stock="12">12</span><span class="pill ok">In stock</span></div>
+            <div class="row"><span class="grow">Premium Gin 500ml <span class="sub">Alcoholic Drinks</span></span><span class="amt" data-stock="4">4</span><span class="pill low">Low stock</span></div>
+            <div class="row"><span class="grow">Maize Flour 25kg <span class="sub">General Merchandise</span></span><span class="amt" data-stock="0">0</span><span class="pill out">Out of stock</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="toast"><b>Running low</b><span>Premium Gin 500ml — 4 left, reorder at 10</span></div>
+    </div>
+    <div class="base"></div>
+    <p class="overlay first">CONTROL YOUR STOCK</p>
+    <p class="overlay second">KNOW WHAT'S RUNNING LOW</p>
+  </section>
+
+  <!-- 20–29s -->
+  <section class="scene push" data-scene="3">
+    <div class="laptop">
+      <div class="screen">
+        <div class="app-bar">
+          <span class="dot"></span><span class="app-title">Financial reports</span>
+          <span class="app-sub">This month</span>
+        </div>
+        <div class="app-body" style="padding-bottom:0">
+          <div class="kpis">
+            <div class="kpi"><p class="label">Revenue</p><p class="value" data-count="18400000" data-prefix="UGX ">UGX 0</p></div>
+            <div class="kpi"><p class="label">Expenses</p><p class="value warn" data-count="13950000" data-prefix="UGX ">UGX 0</p></div>
+            <div class="kpi"><p class="label">Net profit</p><p class="value good" data-count="4450000" data-prefix="UGX ">UGX 0</p></div>
+          </div>
+          <div class="panel">
+            <div class="bars">
+              <div class="bar revenue"><div class="fill" style="--h:100%"></div><p class="cap">Revenue</p></div>
+              <div class="bar expenses"><div class="fill" style="--h:76%"></div><p class="cap">Expenses</p></div>
+              <div class="bar profit"><div class="fill" style="--h:24%"></div><p class="cap">Profit</p></div>
+            </div>
+          </div>
+        </div>
+        <div class="profit-call">
+          <span class="l">What you actually kept</span>
+          <span class="v" data-count="4450000" data-prefix="UGX ">UGX 0</span>
+        </div>
+      </div>
+    </div>
+    <div class="base"></div>
+    <p class="overlay first">REVENUE &ne; PROFIT</p>
+    <p class="overlay second">KNOW YOUR REAL PROFIT</p>
+  </section>
+
+  <!-- 29–35s -->
+  <section class="scene" data-scene="4">
+    <div class="phone">
+      <div class="notch"></div>
+      <div class="app-bar" style="padding:18px 20px">
+        <span class="dot"></span><span class="app-title" style="font-size:20px">SalesPos</span>
+      </div>
+      <div class="app-body" style="padding:18px; gap:14px">
+        <div class="kpi"><p class="label">Sales today</p><p class="value" style="font-size:34px" data-count="2840000" data-prefix="UGX ">UGX 0</p></div>
+        <div class="kpi"><p class="label">Net profit</p><p class="value good" style="font-size:34px" data-count="712000" data-prefix="UGX ">UGX 0</p></div>
+        <div class="panel">
+          <div class="row" style="font-size:17px"><span class="grow">Cooking Oil 5L <span class="sub">MoMo</span></span><span class="amt">117,000</span></div>
+          <div class="row" style="font-size:17px"><span class="grow">Soda Crate (24) <span class="sub">Credit</span></span><span class="amt">32,000</span></div>
+          <div class="row" style="font-size:17px"><span class="grow">Bar Soap <span class="sub">Cash</span></span><span class="amt">55,000</span></div>
+        </div>
+      </div>
+    </div>
+    <p class="overlay first" style="bottom:230px">YOUR BUSINESS.<br />IN YOUR HAND.</p>
+  </section>
+
+  <!-- 35–40s -->
+  <section class="scene" data-scene="5">
+    <div class="sheen"></div>
+    <h2 class="wordmark">SALESPOS</h2>
+    <p class="tagline">SALES &bull; STOCK &bull; PROFIT &bull; CONTROL</p>
+    <p class="cta">TRY SALESPOS TODAY</p>
+    <p class="url">salespos-three.vercel.app</p>
+  </section>
+
+</div>
+
+<div id="chrome">
+  <button id="replay">Replay</button>
+  <button id="rec">Hide controls</button>
+  <span id="clock">0.0s</span>
+  <span>— record the stage at 100% for a clean 1080×1920</span>
+</div>
+
+<script>
+/*
+ * One clock for the whole film.
+ *
+ * Scene boundaries are the brief's, to the second. Switching on a single
+ * timer rather than per-element delays means a replay is identical to the
+ * first play, which is what makes a screen recording usable.
+ */
+const SCENES = [
+  { at: 0,  until: 5  },
+  { at: 5,  until: 12 },
+  { at: 12, until: 20 },
+  { at: 20, until: 29 },
+  { at: 29, until: 35 },
+  { at: 35, until: 40 },
+];
+
+const stage = document.getElementById("stage");
+const scenes = [...document.querySelectorAll(".scene")];
+const clock = document.getElementById("clock");
+
+/* The opening line, one word at a time. */
+const HOOK = "DO YOU KNOW HOW MUCH YOUR BUSINESS MADE TODAY?";
+document.getElementById("hook").innerHTML = HOOK.split(" ")
+  .map((w, i) => `<span class="w" style="animation-delay:${0.25 + i * 0.17}s">${w}</span>`)
+  .join(" ");
+
+/** Fit the 1080x1920 stage to whatever screen is previewing it. */
+function fit() {
+  const scale = Math.min(window.innerWidth / 1080, window.innerHeight / 1920);
+  stage.style.transform = `scale(${scale})`;
+  stage.style.position = "absolute";
+  stage.style.left = `${(window.innerWidth - 1080 * scale) / 2}px`;
+  stage.style.top = `${(window.innerHeight - 1920 * scale) / 2}px`;
+}
+window.addEventListener("resize", fit);
+fit();
+
+/** Money and counts climbing, eased so they settle rather than stop dead. */
+function runCounters(scene) {
+  scene.querySelectorAll("[data-count]").forEach((el) => {
+    const target = Number(el.dataset.count);
+    const prefix = el.dataset.prefix ?? "";
+    const started = performance.now();
+    const ms = 1600;
+    const step = (now) => {
+      const t = Math.min(1, (now - started) / ms);
+      const eased = 1 - Math.pow(1 - t, 3);
+      el.textContent = prefix + Math.round(target * eased).toLocaleString("en-US");
+      if (t < 1 && el.isConnected) requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  });
+}
+
+/** A sale going through: the shelf count drops while you watch it. */
+function runStockDrop(scene) {
+  const cell = scene.querySelector("[data-drop]");
+  if (!cell) return;
+  const from = Number(cell.dataset.stock);
+  const by = Number(cell.dataset.drop);
+  let shown = from;
+  const tick = setInterval(() => {
+    if (shown <= from - by) return clearInterval(tick);
+    shown -= 1;
+    cell.textContent = String(shown);
+    cell.style.color = "#d98613";
+  }, 420);
+  setTimeout(() => clearInterval(tick), 4000);
+}
+
+let startedAt = 0;
+let current = -1;
+
+function frame(now) {
+  const t = (now - startedAt) / 1000;
+  clock.textContent = `${Math.min(t, 40).toFixed(1)}s`;
+
+  const index = SCENES.findIndex((s) => t >= s.at && t < s.until);
+  if (index !== -1 && index !== current) {
+    current = index;
+    scenes.forEach((s, i) => {
+      if (i === index) {
+        // Re-inserting the node restarts every CSS animation inside it, which
+        // is what lets a replay look exactly like the first play.
+        const fresh = s.cloneNode(true);
+        s.replaceWith(fresh);
+        scenes[i] = fresh;
+        fresh.setAttribute("data-active", "");
+        runCounters(fresh);
+        runStockDrop(fresh);
+      } else {
+        s.removeAttribute("data-active");
+      }
+    });
+  }
+
+  if (t < 41) requestAnimationFrame(frame);
+}
+
+function play() {
+  current = -1;
+  scenes.forEach((s) => s.removeAttribute("data-active"));
+  startedAt = performance.now();
+  requestAnimationFrame(frame);
+}
+
+document.getElementById("replay").addEventListener("click", play);
+document.getElementById("rec").addEventListener("click", () => {
+  document.body.classList.add("recording");
+  play();
+});
+
+play();
+</script>
+</body>
+</html>
