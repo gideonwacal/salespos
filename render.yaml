@@ -110,3 +110,29 @@ services:
         value: "60"
       - key: JWT_REFRESH_DAYS
         value: "14"
+      # --- the WhatsApp assistant ---
+      # All optional. With none of these set the assistant simply reports
+      # itself unavailable; nothing else in the app changes.
+      #
+      # Gemini: aistudio.google.com/apikey. The free tier is enough to try it.
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        value: "gemini-2.0-flash"
+      # Meta WhatsApp Cloud API: developers.facebook.com -> WhatsApp -> API Setup.
+      - key: WHATSAPP_TOKEN
+        sync: false
+      - key: WHATSAPP_PHONE_NUMBER_ID
+        sync: false
+      # You invent this one, then type the same value into Meta's webhook page.
+      - key: WHATSAPP_VERIFY_TOKEN
+        sync: false
+      # App Settings -> Basic -> App Secret. Not optional in practice: without
+      # it the webhook refuses every request, because an unsigned webhook URL
+      # is an open door into the business's data.
+      - key: WHATSAPP_APP_SECRET
+        sync: false
+      # Only needed to send reminders to customers. Meta requires an approved
+      # template before a business may open a conversation.
+      - key: WHATSAPP_REMINDER_TEMPLATE
+        sync: false

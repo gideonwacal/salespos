@@ -151,3 +151,32 @@ def clear_store(*, workspace, mode: str, performed_by=None) -> dict:
         "deleted": len(products),
         "kept": 0,
     }
+
+
+def inventory_value(workspace) -> dict:
+    """What the shelves are worth, at cost and at retail.
+
+    Services carry no stock, so they are left out of both figures — counting a
+    consultation as zero shillings of inventory is accurate but misleading.
+    """
+    from decimal import Decimal
+
+    from django.db.models import DecimalField, Sum, Value
+    from django.db.models.functions import Coalesce
+
+    money = DecimalField(max_digits=16, decimal_places=2)
+    zero = Value(Decimal("0"), output_field=money)
+
+    rows = Product.objects.filter(workspace=workspace, is_service=False)
+    agg = rows.aggregate(
+        cost=Coalesce(Sum(F("unit_buying_price") * F("stock_quantity"), output_field=money), zero),
+        retail=Coalesce(Sum(F("unit_selling_price") * F("stock_quantity"), output_field=money), zero),
+        units=Coalesce(Sum("stock_quantity"), Value(0)),
+    )
+    return {
+        "cost": agg["cost"] or Decimal("0"),
+        "retail": agg["retail"] or Decimal("0"),
+        "units": agg["units"] or 0,
+        "lines": rows.count(),
+        "out_of_stock": rows.filter(stock_quantity__lte=0).count(),
+    }

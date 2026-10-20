@@ -5,7 +5,6 @@ create is stamped with the caller's workspace — a new endpoint is tenant-safe 
 inheritance rather than by remembering to add a filter.
 """
 
-from decimal import Decimal
 
 from django.db.models import Sum
 from django.utils import timezone
@@ -24,6 +23,7 @@ from apps.trade.models import (
     Shift,
     Supplier,
 )
+from apps.trade.services import debt_outstanding
 from apps.trade.serializers import (
     BottleMovementSerializer,
     CustomerSerializer,
@@ -90,13 +90,12 @@ class DebtViewSet(WorkspaceViewSet):
     @action(detail=False, methods=["get"])
     def summary(self, request):
         qs = self.get_queryset()
-        outstanding = Decimal(0)
-        for debt in qs.exclude(status="cleared"):
-            outstanding += Decimal(debt.total_value or 0) - Decimal(debt.amount_paid or 0)
         return Response(
             {
                 "count": qs.count(),
-                "outstanding": outstanding,
+                # Summed in the database rather than by walking every row, which
+                # is also what the assistant calls.
+                "outstanding": debt_outstanding(qs.exclude(status="cleared")),
                 "overdue_count": qs.filter(status="overdue").count(),
                 "cleared_count": qs.filter(status="cleared").count(),
             }

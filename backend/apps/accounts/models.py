@@ -121,6 +121,10 @@ class Workspace(models.Model):
     phone = models.CharField(max_length=40, blank=True, default="")
     email = models.EmailField(blank=True, default="")
     tax_id = models.CharField(max_length=60, blank=True, default="")
+    # Which clock the business keeps. The project stores everything in UTC;
+    # this is what "today's sales" is measured against, so a shop in Kampala
+    # is not shown yesterday's figures until 3am.
+    timezone = models.CharField(max_length=64, default="Africa/Kampala")
     currency = models.CharField(max_length=8, default="UGX")
     currency_symbol = models.CharField(max_length=8, default="UGX")
     vat_percent = models.DecimalField(max_digits=6, decimal_places=2, default=0)

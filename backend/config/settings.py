@@ -48,6 +48,7 @@ INSTALLED_APPS = [
     "apps.trade",
     "apps.clinical",
     "apps.console",
+    "apps.ai",
 ]
 
 MIDDLEWARE = [
@@ -359,3 +360,47 @@ REST_FRAMEWORK["DEFAULT_THROTTLE_RATES"] = {
     "billing_info": "20/hour",
     "payment_submit": "10/day",
 }
+
+
+# --- the WhatsApp assistant ---------------------------------------------------
+#
+# Everything here is optional. With no keys set the assistant simply reports
+# itself unavailable; nothing else in the app changes.
+
+# Which model provider the agent talks to. "gemini" today; the abstraction in
+# apps/ai/providers.py exists so this can become something else without the
+# rest of the app noticing.
+AI_PROVIDER = os.environ.get("AI_PROVIDER", "gemini").strip()
+
+# aistudio.google.com/apikey. The free tier is enough to try this on.
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.0-flash").strip()
+GEMINI_BASE_URL = os.environ.get(
+    "GEMINI_BASE_URL", "https://generativelanguage.googleapis.com"
+).strip().rstrip("/")
+
+# Meta's WhatsApp Cloud API: developers.facebook.com -> WhatsApp -> API Setup.
+WHATSAPP_TOKEN = os.environ.get("WHATSAPP_TOKEN", "").strip()
+WHATSAPP_PHONE_NUMBER_ID = os.environ.get("WHATSAPP_PHONE_NUMBER_ID", "").strip()
+# Chosen by you, then typed into the same box on Meta's webhook setup screen.
+WHATSAPP_VERIFY_TOKEN = os.environ.get("WHATSAPP_VERIFY_TOKEN", "").strip()
+# Meta signs every webhook with this. Without it the signature cannot be
+# checked, so the webhook refuses to act on anything it is sent.
+WHATSAPP_APP_SECRET = os.environ.get("WHATSAPP_APP_SECRET", "").strip()
+WHATSAPP_API_BASE = os.environ.get(
+    "WHATSAPP_API_BASE", "https://graph.facebook.com/v21.0"
+).strip().rstrip("/")
+
+# How long someone has to say yes to a proposed action before it lapses.
+AI_CONFIRM_MINUTES = int(os.environ.get("AI_CONFIRM_MINUTES", "10"))
+
+# Questions per person per hour, and per business per hour. The free Gemini
+# tier is generous but finite, and a loop in a client should not be able to
+# spend the whole month's quota before anyone notices.
+AI_RATE_PER_USER_HOUR = int(os.environ.get("AI_RATE_PER_USER_HOUR", "60"))
+AI_RATE_PER_WORKSPACE_HOUR = int(os.environ.get("AI_RATE_PER_WORKSPACE_HOUR", "300"))
+
+# Meta will not let a business open a WhatsApp conversation with free text, so
+# outbound reminders need an approved template name. Unset means the assistant
+# refuses to send rather than failing once per customer.
+WHATSAPP_REMINDER_TEMPLATE = os.environ.get("WHATSAPP_REMINDER_TEMPLATE", "").strip()

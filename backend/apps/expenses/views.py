@@ -1,10 +1,10 @@
-from django.db.models import Sum
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
 from apps.core.tenancy import WorkspaceViewSet
 from apps.expenses.models import Expense
 from apps.expenses.serializers import ExpenseSerializer
+from apps.expenses.services import expenses_by_category, expense_total
 
 
 class ExpenseViewSet(WorkspaceViewSet):
@@ -37,11 +37,7 @@ class ExpenseViewSet(WorkspaceViewSet):
 
     @action(detail=False, methods=["get"])
     def summary(self, request):
-        rows = (
-            self.get_queryset()
-            .values("category")
-            .annotate(total=Sum("amount"))
-            .order_by("-total")
+        qs = self.get_queryset()
+        return Response(
+            {"total": expense_total(qs), "by_category": expenses_by_category(qs, limit=100)}
         )
-        total = self.get_queryset().aggregate(total=Sum("amount"))["total"] or 0
-        return Response({"total": total, "by_category": list(rows)})

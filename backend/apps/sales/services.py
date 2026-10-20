@@ -294,3 +294,120 @@ def void_sale(sale: Sale) -> None:
             performed_by=sale.cashier,
         )
     sale.delete()
+
+
+# --- reporting ---------------------------------------------------------------
+#
+# The dashboard's summary endpoint and the WhatsApp assistant must never
+# disagree about what a day's takings were, so both call the functions below
+# rather than each writing their own aggregate.
+
+
+def scoped_sales(workspace, period=None):
+    """Sales for one workspace, optionally inside a period."""
+    qs = Sale.objects.filter(workspace=workspace)
+    if period is not None:
+        qs = qs.filter(created_at__gte=period.start, created_at__lt=period.end)
+    return qs
+
+
+def sales_totals(qs) -> dict:
+    """Count, revenue, cost and profit for a set of sales."""
+    from django.db.models import Sum
+
+    agg = qs.aggregate(revenue=Sum("total_amount"), cost=Sum("total_cost"))
+    revenue = agg["revenue"] or Decimal("0")
+    cost = agg["cost"] or Decimal("0")
+    return {
+        "count": qs.count(),
+        "revenue": revenue,
+        "cost": cost,
+        "profit": revenue - cost,
+    }
+
+
+def sales_by_payment_method(qs) -> list[dict]:
+    """How the money came in — cash, mobile money, credit."""
+    from django.db.models import Count, Sum
+
+    rows = (
+        qs.values("payment_method")
+        .annotate(total=Sum("total_amount"), count=Count("id"))
+        .order_by("-total")
+    )
+    return [
+        {
+            "method": row["payment_method"] or "unspecified",
+            "total": row["total"] or Decimal("0"),
+            "count": row["count"],
+        }
+        for row in rows
+    ]
+
+
+def top_products(workspace, period=None, *, limit: int = 5) -> list[dict]:
+    """Best sellers by revenue, from the sale lines rather than the shelf.
+
+    Uses the snapshotted `product_name`, so an item sold and later deleted
+    still appears under the name it was sold as.
+    """
+    from django.db.models import DecimalField, F, Sum
+
+    lines = SaleItem.objects.filter(workspace=workspace)
+    if period is not None:
+        lines = lines.filter(sale__created_at__gte=period.start, sale__created_at__lt=period.end)
+
+    rows = (
+        lines.values("product_name")
+        .annotate(
+            # Named `units`, not `quantity`: an annotation alias shadows the
+            # column of the same name, so F("quantity") below would resolve to
+            # this aggregate instead of the field and Django would refuse it.
+            units=Sum("quantity"),
+            revenue=Sum("subtotal"),
+            # unit_cost is a decimal and quantity an integer, so the product of
+            # the two needs an explicit output_field.
+            cost=Sum(
+                F("unit_cost") * F("quantity"),
+                output_field=DecimalField(max_digits=16, decimal_places=2),
+            ),
+        )
+        .order_by("-revenue")[:limit]
+    )
+    return [
+        {
+            "name": row["product_name"] or "Unnamed item",
+            "quantity": row["units"] or 0,
+            "revenue": row["revenue"] or Decimal("0"),
+            "profit": (row["revenue"] or Decimal("0")) - (row["cost"] or Decimal("0")),
+        }
+        for row in rows
+    ]
+
+
+def sales_by_cashier(workspace, period=None, *, limit: int = 10) -> list[dict]:
+    """Who rang up what.
+
+    There is no branch in this system, so this is as close as it gets to
+    comparing one part of the business against another.
+    """
+    from django.db.models import Count, Sum
+
+    qs = scoped_sales(workspace, period)
+    rows = (
+        qs.values("cashier__full_name", "cashier__email")
+        .annotate(revenue=Sum("total_amount"), cost=Sum("total_cost"), count=Count("id"))
+        .order_by("-revenue")[:limit]
+    )
+    out = []
+    for row in rows:
+        revenue = row["revenue"] or Decimal("0")
+        out.append(
+            {
+                "name": row["cashier__full_name"] or row["cashier__email"] or "Unassigned",
+                "revenue": revenue,
+                "profit": revenue - (row["cost"] or Decimal("0")),
+                "count": row["count"],
+            }
+        )
+    return out

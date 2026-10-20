@@ -1,5 +1,3 @@
-from django.db.models import Sum
-from django.utils import timezone
 from rest_framework import status
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -12,7 +10,8 @@ from apps.sales.serializers import (
     SaleItemSerializer,
     SaleSerializer,
 )
-from apps.sales.services import amend_sale, create_sale, void_sale
+from apps.core.timezones import business_today
+from apps.sales.services import amend_sale, create_sale, sales_totals, void_sale
 
 
 class SaleViewSet(WorkspaceViewSet):
@@ -62,23 +61,18 @@ class SaleViewSet(WorkspaceViewSet):
 
     @action(detail=False, methods=["get"])
     def summary(self, request):
-        """Totals for the dashboard, computed in the database rather than the browser."""
+        """Totals for the dashboard, computed in the database rather than the browser.
+
+        `today` is the business's own today, not the server's. The project runs
+        on UTC, so before this used the workspace timezone a shop in Kampala
+        saw yesterday's takings until 3am.
+        """
         sales = self.get_queryset()
-        today = timezone.localdate()
+        today = business_today(request.workspace)
         today_sales = sales.filter(created_at__date=today)
-
-        def totals(qs):
-            agg = qs.aggregate(revenue=Sum("total_amount"), cost=Sum("total_cost"))
-            revenue = agg["revenue"] or 0
-            cost = agg["cost"] or 0
-            return {
-                "count": qs.count(),
-                "revenue": revenue,
-                "cost": cost,
-                "profit": revenue - cost,
-            }
-
-        return Response({"today": totals(today_sales), "all_time": totals(sales)})
+        return Response(
+            {"today": sales_totals(today_sales), "all_time": sales_totals(sales)}
+        )
 
 
 class SaleItemViewSet(WorkspaceViewSet):
