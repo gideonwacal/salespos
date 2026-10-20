@@ -196,6 +196,32 @@ class RegisterSerializer(serializers.Serializer):
     industry = serializers.CharField(
         max_length=100, required=False, allow_blank=True, default=""
     )
+    # The handset the owner wants to run the business from. Optional: a shop
+    # that does not want the assistant simply leaves it blank, and one that
+    # changes its mind can add it later from Settings.
+    whatsapp_number = serializers.CharField(
+        max_length=40, required=False, allow_blank=True, default=""
+    )
+
+    def validate_whatsapp_number(self, value):
+        from apps.ai.models import normalise_phone
+        from apps.ai.onboarding import conflicting_identity
+
+        value = (value or "").strip()
+        if not value:
+            return ""
+        digits = normalise_phone(value)
+        if len(digits) < 11:
+            raise serializers.ValidationError(
+                "Enter the WhatsApp number with its country code, e.g. 0772 000 111."
+            )
+        # One number cannot answer for two businesses: the webhook would have
+        # to choose, and either choice shows one shop's figures to the other.
+        if conflicting_identity(digits) is not None:
+            raise serializers.ValidationError(
+                "That WhatsApp number is already linked to another SalesPos business."
+            )
+        return digits
 
     def validate_email(self, value):
         value = value.strip().lower()
@@ -224,7 +250,14 @@ class RegisterSerializer(serializers.Serializer):
             industry=validated_data.get("industry", ""),
         )
         Membership.objects.create(user=user, workspace=workspace, role="owner")
-        return {"user": user, "workspace": workspace}
+        # Handed back rather than linked here: sending the welcome is an HTTP
+        # call to Meta, and holding this transaction open across it would keep
+        # a database lock for as long as their API takes to answer.
+        return {
+            "user": user,
+            "workspace": workspace,
+            "whatsapp_number": validated_data.get("whatsapp_number", ""),
+        }
 
 
 class InviteMemberSerializer(serializers.Serializer):

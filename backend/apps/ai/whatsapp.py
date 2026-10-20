@@ -23,6 +23,16 @@ class WhatsAppProvider:
     def send(self, to: str, text: str) -> bool:
         raise NotImplementedError
 
+    def send_template(self, to: str, template: str, body_params: list) -> bool:
+        """Open a conversation with someone who has not written to us yet.
+
+        Meta only allows free text inside a 24-hour window that the *customer*
+        opens by messaging first. A business reaching out cold must use a
+        template it had approved in advance, which is why this exists
+        separately from `send`.
+        """
+        raise NotImplementedError
+
     def verify_signature(self, body: bytes, header: str) -> bool:
         raise NotImplementedError
 
@@ -62,6 +72,47 @@ class MetaWhatsAppProvider(WhatsAppProvider):
             return False
         if response.status_code >= 400:
             log.error("WhatsApp send rejected (%s): %s", response.status_code, response.text[:300])
+            return False
+        return True
+
+    def send_template(self, to: str, template: str, body_params: list) -> bool:
+        if not self.configured or not template:
+            log.warning("WhatsApp template send skipped: not configured")
+            return False
+        url = f"{settings.WHATSAPP_API_BASE}/{settings.WHATSAPP_PHONE_NUMBER_ID}/messages"
+        payload = {
+            "messaging_product": "whatsapp",
+            "to": to,
+            "type": "template",
+            "template": {
+                "name": template,
+                "language": {"code": settings.WHATSAPP_TEMPLATE_LANGUAGE},
+            },
+        }
+        if body_params:
+            payload["template"]["components"] = [
+                {
+                    "type": "body",
+                    "parameters": [{"type": "text", "text": str(p)} for p in body_params],
+                }
+            ]
+        try:
+            response = requests.post(
+                url,
+                headers={"Authorization": f"Bearer {settings.WHATSAPP_TOKEN}"},
+                json=payload,
+                timeout=15,
+            )
+        except requests.RequestException as exc:
+            log.error("WhatsApp template send failed for %s: %s", to[-4:], exc)
+            return False
+        if response.status_code >= 400:
+            # The usual cause is a template name that is not approved yet, or
+            # whose placeholder count does not match what we sent.
+            log.error(
+                "WhatsApp template %r rejected (%s): %s",
+                template, response.status_code, response.text[:300],
+            )
             return False
         return True
 

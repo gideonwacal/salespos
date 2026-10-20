@@ -72,6 +72,8 @@ WHATSAPP_TOKEN=...               # permanent token from a System User
 WHATSAPP_PHONE_NUMBER_ID=...     # on the API Setup page
 WHATSAPP_VERIFY_TOKEN=...        # you invent this; type it into Meta too
 WHATSAPP_APP_SECRET=...          # App Settings → Basic → App Secret
+WHATSAPP_WELCOME_TEMPLATE=       # the greeting sent at sign-up (see below)
+WHATSAPP_TEMPLATE_LANGUAGE=en
 WHATSAPP_REMINDER_TEMPLATE=      # only needed to send customer reminders
 
 # Optional limits
@@ -108,13 +110,63 @@ from it.
 
 ## Linking a number
 
+### At sign-up (the usual way)
+
+The sign-up form has a **WhatsApp business number** field. Fill it in and the
+greeting goes out the moment the account is created:
+
+```
+POST /api/auth/register/   {..., "whatsapp_number": "0772000111"}
+→ {..., "whatsapp": {"number": "256772000111",
+                     "pairing_code": "481920",
+                     "welcome_sent": true}}
+```
+
+They reply `481920` from that handset and get
+
+> 🎉 **Welcome to your business!**
+> Nakawa Traders is now set up on SalesPos, and this is your assistant.
+
+From then on they just ask questions.
+
+**The first message has to be a template.** Meta only allows free text inside a
+24-hour window that the *customer* opens by messaging first, and a shop that
+signed up ten seconds ago has never messaged us. So `WHATSAPP_WELCOME_TEMPLATE`
+names a template you had approved in advance; their reply opens the window, and
+everything after it is ordinary text.
+
+Create it at business.facebook.com → WhatsApp Manager → Message templates,
+category **Utility**, with two body placeholders in this order:
+
+```
+Welcome to SalesPos, {{1}}! 🎉
+
+Your business assistant is ready. Reply with the code {{2}} to link this
+number, then just ask me things like "How much did I sell today?"
+```
+
+Approval usually takes under an hour. Until it is approved, sign-up still
+works: `welcome_sent` comes back `false`, and the app shows the pairing code on
+screen so the owner can link the number by hand.
+
+**A typed number is a claim, not proof.** Until somebody replies from that
+handset the link stays unverified and the assistant answers nothing through it.
+A mistyped digit would otherwise put one shop's takings on a stranger's phone.
+A wrong recipient replying "who is this?" does *not* link them — only the code
+does, which is why the code exists at all.
+
+A number that is already *verified* against another business is refused at
+sign-up. An unverified claim does not reserve it, so a typo cannot squat on
+somebody else's number.
+
+### Later, from Settings
+
 ```
 POST /api/ai/whatsapp-identities/   {"phone": "0772000111"}
 → {"pairing_code": "481920", ...}
 ```
 
-The owner sends `481920` from that handset. The webhook verifies the link and
-confirms. From then on they can just ask questions.
+Same pairing step, for a shop that skipped the field or is changing handsets.
 
 ## Trying it without WhatsApp
 

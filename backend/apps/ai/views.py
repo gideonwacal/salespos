@@ -23,6 +23,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.ai.agent import AgentService, ConversationService
+from apps.ai import onboarding
 from apps.ai.context import build_context
 from apps.ai.models import Conversation, Message, WhatsAppIdentity, normalise_phone
 from apps.ai.ratelimit import RateLimited, check as check_rate
@@ -241,12 +242,10 @@ class WhatsAppWebhookView(APIView):
                 identity.verified_at = timezone.now()
                 identity.pairing_code = ""
                 identity.save(update_fields=["verified_at", "pairing_code"])
-                provider.send(
-                    sender,
-                    f"✅ Linked to *{identity.workspace.name}*.\n\n"
-                    "Ask me things like “How much did I sell today?” or "
-                    "“Who owes me money?”",
-                )
+                # Free text is allowed from here on: replying opened Meta's
+                # 24-hour window, which is why the greeting before this one
+                # had to be a template.
+                provider.send(sender, onboarding.welcome_text(identity.workspace))
             else:
                 provider.send(
                     sender,

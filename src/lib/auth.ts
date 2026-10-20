@@ -23,6 +23,15 @@ import {
   type SessionUser,
 } from "@/lib/demo";
 
+/** What the server says about the WhatsApp number given at sign-up. */
+export type WhatsAppLink = {
+  number: string;
+  pairing_code: string;
+  /** False when Meta would not deliver the greeting, usually because no
+   *  message template is approved yet. The code is shown instead. */
+  welcome_sent: boolean;
+};
+
 /** fetch() throws a TypeError when it can't reach the host at all. */
 function isUnreachable(error: unknown) {
   return error instanceof TypeError;
@@ -105,7 +114,8 @@ export async function signUp(input: {
   businessName: string;
   phone?: string;
   industry?: string;
-}): Promise<SessionUser> {
+  whatsappNumber?: string;
+}): Promise<SessionUser & { whatsapp?: WhatsAppLink }> {
   try {
     const data = await api.register(input);
     const user: SessionUser = {
@@ -122,7 +132,9 @@ export async function signUp(input: {
       // A brand-new workspace still needs the setup wizard.
       business: { ...businessFrom(data.workspace), configured: false },
     });
-    return user;
+    // Passed back so the sign-up screen can tell them to expect the WhatsApp
+    // greeting, or show the pairing code if it could not be delivered.
+    return { ...user, whatsapp: data.whatsapp ?? undefined };
   } catch (error) {
     if (!isUnreachable(error)) throw error;
     return signUpLocal(input);

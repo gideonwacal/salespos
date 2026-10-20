@@ -136,3 +136,11 @@ services:
       # template before a business may open a conversation.
       - key: WHATSAPP_REMINDER_TEMPLATE
         sync: false
+      # The greeting sent to a shop's WhatsApp number the moment they sign up.
+      # Must be an approved template: Meta will not deliver free text to
+      # someone who has not messaged the business first. Two placeholders, in
+      # order - the business name, then the pairing code.
+      - key: WHATSAPP_WELCOME_TEMPLATE
+        sync: false
+      - key: WHATSAPP_TEMPLATE_LANGUAGE
+        value: "en"

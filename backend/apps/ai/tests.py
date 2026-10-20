@@ -625,7 +625,8 @@ class WhatsAppTests(Base):
         self.post(self.envelope("123456"))
         identity.refresh_from_db()
         self.assertTrue(identity.verified)
-        self.assertIn("Linked to", self.sent[0][1])
+        self.assertIn("Welcome to your business", self.sent[0][1])
+        self.assertIn("Nakawa Traders", self.sent[0][1])
 
     def test_an_unverified_link_answers_nothing_until_paired(self):
         self.link(verified=False)
@@ -830,3 +831,210 @@ class PaymentReminderTests(Base):
         self.assertIn("owner", reply.lower())
         self.assertFalse(PendingAction.objects.exists())
         self.assertEqual(self.sent, [])
+
+
+@override_settings(
+    WHATSAPP_TOKEN="t", WHATSAPP_PHONE_NUMBER_ID="1", WHATSAPP_APP_SECRET="shh",
+    WHATSAPP_WELCOME_TEMPLATE="salespos_welcome", REQUIRE_EMAIL_VERIFICATION=False,
+)
+class SignupWhatsAppTests(APITestCase):
+    """Giving a WhatsApp number at sign-up, and being greeted on it."""
+
+    def setUp(self):
+        self.templates = []
+        self.texts = []
+
+        import apps.ai.whatsapp as whatsapp_module
+
+        class Fake:
+            outer = self
+
+            def send(inner, to, text):
+                inner.outer.texts.append((to, text))
+                return True
+
+            def send_template(inner, to, template, body_params):
+                inner.outer.templates.append((to, template, body_params))
+                return True
+
+            def verify_signature(inner, body, header):
+                from apps.ai.whatsapp import MetaWhatsAppProvider
+
+                return MetaWhatsAppProvider().verify_signature(body, header)
+
+            def parse(inner, payload):
+                from apps.ai.whatsapp import MetaWhatsAppProvider
+
+                return MetaWhatsAppProvider().parse(payload)
+
+        self._original = whatsapp_module.get_whatsapp_provider
+        whatsapp_module.get_whatsapp_provider = lambda: Fake()
+        self.addCleanup(lambda: setattr(whatsapp_module, "get_whatsapp_provider", self._original))
+
+        import apps.ai.views as views
+
+        self._original_views = views.get_whatsapp_provider
+        views.get_whatsapp_provider = lambda: Fake()
+        self.addCleanup(lambda: setattr(views, "get_whatsapp_provider", self._original_views))
+
+    def register(self, **overrides):
+        body = {
+            "email": "owner@nakawa.com",
+            "password": "sup3rsecret!",
+            "full_name": "Grace Nabwire",
+            "business_name": "Nakawa Traders",
+            "whatsapp_number": "0772000111",
+            **overrides,
+        }
+        return self.client.post("/api/auth/register/", body, format="json")
+
+    def test_signing_up_greets_the_number_straight_away(self):
+        response = self.register()
+        self.assertEqual(response.status_code, 201)
+
+        identity = WhatsAppIdentity.objects.get()
+        self.assertEqual(identity.phone, "256772000111")
+        self.assertEqual(identity.workspace.name, "Nakawa Traders")
+
+        # One template message, carrying the business name and the code.
+        self.assertEqual(len(self.templates), 1)
+        to, template, params = self.templates[0]
+        self.assertEqual(to, "256772000111")
+        self.assertEqual(template, "salespos_welcome")
+        self.assertEqual(params, ["Nakawa Traders", identity.pairing_code])
+
+        self.assertTrue(response.data["whatsapp"]["welcome_sent"])
+
+    def test_the_number_is_not_usable_until_they_reply(self):
+        """A typed number is a claim; only a reply from the handset is proof."""
+        self.register()
+        identity = WhatsAppIdentity.objects.get()
+        self.assertFalse(identity.verified)
+
+    def test_replying_with_the_code_opens_the_business(self):
+        self.register()
+        identity = WhatsAppIdentity.objects.get()
+        code = identity.pairing_code
+
+        body = json.dumps(
+            {
+                "entry": [
+                    {
+                        "changes": [
+                            {
+                                "value": {
+                                    "messages": [
+                                        {
+                                            "from": "256772000111", "id": "wamid.1",
+                                            "type": "text", "text": {"body": code},
+                                        }
+                                    ]
+                                }
+                            }
+                        ]
+                    }
+                ]
+            }
+        ).encode()
+        signature = "sha256=" + hmac.new(b"shh", body, hashlib.sha256).hexdigest()
+        response = self.client.post(
+            "/api/webhooks/whatsapp/", data=body, content_type="application/json",
+            HTTP_X_HUB_SIGNATURE_256=signature,
+        )
+        self.assertEqual(response.status_code, 200)
+
+        identity.refresh_from_db()
+        self.assertTrue(identity.verified)
+        self.assertEqual(identity.pairing_code, "", "the code should not be reusable")
+
+        # And the greeting they actually asked for.
+        self.assertEqual(len(self.texts), 1)
+        self.assertIn("Welcome to your business", self.texts[0][1])
+        self.assertIn("Nakawa Traders", self.texts[0][1])
+
+    def test_a_wrong_reply_does_not_link_the_number(self):
+        """Someone sent the message by mistake must not be linked by answering."""
+        self.register()
+        body = json.dumps(
+            {
+                "entry": [
+                    {
+                        "changes": [
+                            {
+                                "value": {
+                                    "messages": [
+                                        {
+                                            "from": "256772000111", "id": "wamid.2",
+                                            "type": "text",
+                                            "text": {"body": "who is this?"},
+                                        }
+                                    ]
+                                }
+                            }
+                        ]
+                    }
+                ]
+            }
+        ).encode()
+        signature = "sha256=" + hmac.new(b"shh", body, hashlib.sha256).hexdigest()
+        self.client.post(
+            "/api/webhooks/whatsapp/", data=body, content_type="application/json",
+            HTTP_X_HUB_SIGNATURE_256=signature,
+        )
+        WhatsAppIdentity.objects.get().refresh_from_db()
+        self.assertFalse(WhatsAppIdentity.objects.get().verified)
+
+    def test_signing_up_without_a_number_is_fine(self):
+        response = self.register(whatsapp_number="")
+        self.assertEqual(response.status_code, 201)
+        self.assertFalse(WhatsAppIdentity.objects.exists())
+        self.assertIsNone(response.data["whatsapp"])
+        self.assertEqual(self.templates, [])
+
+    def test_a_number_without_a_country_code_is_rejected(self):
+        response = self.register(whatsapp_number="12345")
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("country code", str(response.data["whatsapp_number"]))
+        self.assertFalse(User.objects.filter(email="owner@nakawa.com").exists())
+
+    def test_a_number_already_linked_elsewhere_is_refused(self):
+        other = Workspace.objects.create(name="Someone Else")
+        stranger = User.objects.create_user(email="s@x.com", password="sup3rsecret!")
+        WhatsAppIdentity.objects.create(
+            workspace=other, user=stranger, phone="256772000111",
+            verified_at=timezone.now(),
+        )
+        response = self.register()
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("already linked", str(response.data["whatsapp_number"]))
+
+    def test_an_unverified_claim_elsewhere_does_not_block_a_real_signup(self):
+        """Only a *proved* link reserves a number, so a typo cannot squat on one."""
+        other = Workspace.objects.create(name="Someone Else")
+        stranger = User.objects.create_user(email="s@x.com", password="sup3rsecret!")
+        WhatsAppIdentity.objects.create(
+            workspace=other, user=stranger, phone="256772000111", pairing_code="000000"
+        )
+        self.assertEqual(self.register().status_code, 201)
+
+    @override_settings(WHATSAPP_WELCOME_TEMPLATE="")
+    def test_without_a_template_signup_still_works_and_says_so(self):
+        response = self.register()
+        self.assertEqual(response.status_code, 201)
+        self.assertFalse(response.data["whatsapp"]["welcome_sent"])
+        # The code comes back so the app can show it instead.
+        self.assertTrue(response.data["whatsapp"]["pairing_code"])
+        self.assertEqual(self.templates, [])
+
+    def test_a_failing_whatsapp_api_does_not_fail_the_signup(self):
+        import apps.ai.whatsapp as whatsapp_module
+
+        class Broken:
+            def send_template(self, *a, **k):
+                raise RuntimeError("Meta is down")
+
+        whatsapp_module.get_whatsapp_provider = lambda: Broken()
+        response = self.register()
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(User.objects.filter(email="owner@nakawa.com").exists())
+        self.assertFalse(response.data["whatsapp"]["welcome_sent"])

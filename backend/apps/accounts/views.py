@@ -20,6 +20,7 @@ from apps.accounts.models import (
     Workspace,
 )
 from apps.accounts import momo, verification
+from apps.ai import onboarding
 from apps.accounts.serializers import (
     InviteMemberSerializer,
     MembershipSerializer,
@@ -58,6 +59,14 @@ class RegisterView(APIView):
         if settings.REQUIRE_EMAIL_VERIFICATION:
             _, sent = verification.issue_verification(user, business=workspace.name)
 
+        # The assistant's welcome, if they gave a number. Deliberately outside
+        # the serializer's atomic block, and unable to fail the sign-up: a shop
+        # whose greeting did not send still has an account and can link again
+        # from Settings.
+        identity, welcomed = onboarding.start_link(
+            user=user, workspace=workspace, phone=result.get("whatsapp_number", "")
+        )
+
         return Response(
             {
                 **issue_tokens(user),
@@ -72,6 +81,18 @@ class RegisterView(APIView):
                 "role": "owner",
                 "verification_required": settings.REQUIRE_EMAIL_VERIFICATION,
                 "verification_sent": sent,
+                "whatsapp": (
+                    {
+                        "number": identity.phone,
+                        # Returned so the app can show the code if the message
+                        # itself never arrived: an unapproved template fails at
+                        # Meta's end and the shop would otherwise just wait.
+                        "pairing_code": identity.pairing_code,
+                        "welcome_sent": welcomed,
+                    }
+                    if identity is not None
+                    else None
+                ),
             },
             status=status.HTTP_201_CREATED,
         )

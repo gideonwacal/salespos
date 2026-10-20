@@ -404,3 +404,11 @@ AI_RATE_PER_WORKSPACE_HOUR = int(os.environ.get("AI_RATE_PER_WORKSPACE_HOUR", "3
 # outbound reminders need an approved template name. Unset means the assistant
 # refuses to send rather than failing once per customer.
 WHATSAPP_REMINDER_TEMPLATE = os.environ.get("WHATSAPP_REMINDER_TEMPLATE", "").strip()
+
+# The template sent to a business's WhatsApp number the moment they sign up.
+# Two placeholders, in this order: the business name, then the pairing code.
+# Create and get it approved at business.facebook.com -> WhatsApp Manager ->
+# Message templates. Unset simply means no welcome is sent; sign-up is never
+# held up by it.
+WHATSAPP_WELCOME_TEMPLATE = os.environ.get("WHATSAPP_WELCOME_TEMPLATE", "").strip()
+WHATSAPP_TEMPLATE_LANGUAGE = os.environ.get("WHATSAPP_TEMPLATE_LANGUAGE", "en").strip()

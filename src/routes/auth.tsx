@@ -57,6 +57,7 @@ function AuthPage() {
     full_name: "",
     email: "",
     phone: "",
+    whatsapp: "",
     password: "",
   });
 
@@ -94,16 +95,30 @@ function AuthPage() {
       return toast.error("Use at least 8 characters for the password");
     setBusy(true);
     try {
-      await authSignUp({
+      const created = await authSignUp({
         businessName: signUp.business.trim(),
         fullName: signUp.full_name.trim() || signUp.email.split("@")[0],
         email: signUp.email.trim(),
         phone: signUp.phone.trim(),
+        whatsappNumber: signUp.whatsapp.trim(),
         password: signUp.password,
         industry: signUp.industry,
       });
 
       toast.success("Workspace created — let's set up your business");
+
+      // The greeting is a WhatsApp template, and Meta drops it silently if the
+      // template is not approved yet. Telling them which happened beats
+      // leaving them watching a phone that will never buzz.
+      if (created.whatsapp) {
+        const { welcome_sent, pairing_code } = created.whatsapp;
+        toast.success(
+          welcome_sent
+            ? "Check WhatsApp — we've sent a welcome message to finish linking your number"
+            : `Reply ${pairing_code} from your WhatsApp business number to link it`,
+          { duration: 12000 },
+        );
+      }
       refresh();
       navigate({ to: "/setup", replace: true });
     } catch (err) {
@@ -250,6 +265,23 @@ function AuthPage() {
                       onChange={(e) => setSignUp({ ...signUp, phone: e.target.value })}
                     />
                   </div>
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="su-whatsapp">
+                    WhatsApp business number{" "}
+                    <span className="font-normal text-muted-foreground">(optional)</span>
+                  </Label>
+                  <Input
+                    id="su-whatsapp"
+                    inputMode="tel"
+                    placeholder="0772 000 111"
+                    value={signUp.whatsapp}
+                    onChange={(e) => setSignUp({ ...signUp, whatsapp: e.target.value })}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    We'll send a welcome message here so you can ask your assistant
+                    things like "How much did I sell today?" straight from WhatsApp.
+                  </p>
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="su-email">Email</Label>

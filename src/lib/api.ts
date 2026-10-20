@@ -196,6 +196,8 @@ export async function register(input: {
   businessName: string;
   phone?: string;
   industry?: string;
+  /** The handset the owner wants to run the business from, over WhatsApp. */
+  whatsappNumber?: string;
 }) {
   const data = await request<{
     access: string;
@@ -203,6 +205,13 @@ export async function register(input: {
     user: ApiUser;
     workspace: ApiWorkspace;
     role: string;
+    /** Null when no number was given. `welcome_sent` is false if Meta would
+     *  not deliver the greeting — usually an unapproved message template. */
+    whatsapp: {
+      number: string;
+      pairing_code: string;
+      welcome_sent: boolean;
+    } | null;
   }>("/auth/register/", {
     method: "POST",
     auth: false,
@@ -213,6 +222,7 @@ export async function register(input: {
       phone: input.phone ?? "",
       business_name: input.businessName,
       industry: input.industry ?? "",
+      whatsapp_number: input.whatsappNumber ?? "",
     }),
   });
 
