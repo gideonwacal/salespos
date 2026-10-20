@@ -193,3 +193,48 @@ class PendingAction(WorkspaceScoped):
             and self.cancelled_at is None
             and self.expires_at > timezone.now()
         )
+
+
+class InboundMessage(models.Model):
+    """Every WhatsApp message id this server has already acted on.
+
+    Meta redelivers any webhook it did not get a prompt 200 for, and the
+    handler answers synchronously — model call, tool runs, then the reply — so
+    a slow turn can outlast Meta's patience even though the answer went out.
+    Without a claim on the message id the same question gets answered twice,
+    and a confirmed action could run twice.
+
+    The id is claimed *before* the work starts, so a redelivery that arrives
+    mid-flight is dropped rather than racing the original. Deliberately not
+    workspace-scoped: an unknown number has no workspace, and the id is unique
+    across all of Meta anyway.
+
+    Safe to prune — anything older than a day or two can never be redelivered.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    provider_message_id = models.CharField(max_length=128, unique=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        db_table = "ai_inbound_messages"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return self.provider_message_id
+
+    @classmethod
+    def claim(cls, provider_message_id: str) -> bool:
+        """Take ownership of this message. False means somebody already has it."""
+        from django.db import IntegrityError, transaction
+
+        if not provider_message_id:
+            # No id to deduplicate on; better to answer than to drop it.
+            return True
+        try:
+            # Its own transaction, so a clash does not poison an outer one.
+            with transaction.atomic():
+                cls.objects.create(provider_message_id=provider_message_id[:128])
+        except IntegrityError:
+            return False
+        return True

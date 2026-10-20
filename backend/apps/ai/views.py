@@ -25,7 +25,13 @@ from rest_framework.views import APIView
 from apps.ai.agent import AgentService, ConversationService
 from apps.ai import onboarding
 from apps.ai.context import build_context
-from apps.ai.models import Conversation, Message, WhatsAppIdentity, normalise_phone
+from apps.ai.models import (
+    Conversation,
+    InboundMessage,
+    Message,
+    WhatsAppIdentity,
+    normalise_phone,
+)
 from apps.ai.ratelimit import RateLimited, check as check_rate
 from apps.ai.serializers import (
     ChatRequestSerializer,
@@ -223,6 +229,13 @@ class WhatsAppWebhookView(APIView):
     def _handle(self, provider, message: dict) -> None:
         sender = normalise_phone(message.get("from", ""))
         if not sender:
+            return
+
+        # Claimed before any work is done. Meta redelivers a webhook it did
+        # not get a prompt 200 for, and this handler answers synchronously,
+        # so without this a slow turn is answered twice.
+        if not InboundMessage.claim(message.get("message_id", "")):
+            log.info("Skipped a WhatsApp message Meta sent twice")
             return
 
         identity = (

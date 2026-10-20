@@ -1038,3 +1038,106 @@ class SignupWhatsAppTests(APITestCase):
         self.assertEqual(response.status_code, 201)
         self.assertTrue(User.objects.filter(email="owner@nakawa.com").exists())
         self.assertFalse(response.data["whatsapp"]["welcome_sent"])
+
+
+@override_settings(
+    WHATSAPP_APP_SECRET="shh", WHATSAPP_TOKEN="t", WHATSAPP_PHONE_NUMBER_ID="1",
+)
+class RedeliveryTests(Base):
+    """Meta resends anything it did not get a prompt 200 for."""
+
+    def setUp(self):
+        super().setUp()
+        self.sent = []
+        self.answered = 0
+
+        import apps.ai.views as views
+
+        class Fake:
+            outer = self
+
+            def send(inner, to, text):
+                inner.outer.sent.append((to, text))
+                return True
+
+            def verify_signature(inner, body, header):
+                from apps.ai.whatsapp import MetaWhatsAppProvider
+
+                return MetaWhatsAppProvider().verify_signature(body, header)
+
+            def parse(inner, payload):
+                from apps.ai.whatsapp import MetaWhatsAppProvider
+
+                return MetaWhatsAppProvider().parse(payload)
+
+        original = views.get_whatsapp_provider
+        views.get_whatsapp_provider = lambda: Fake()
+        self.addCleanup(lambda: setattr(views, "get_whatsapp_provider", original))
+
+        outer = self
+
+        class Counting(AgentService):
+            def answer(self, **kwargs):
+                outer.answered += 1
+                return "*UGX 0* today."
+
+        original_agent = views.AgentService
+        views.AgentService = lambda *a, **k: Counting(provider=ScriptedProvider([]))
+        self.addCleanup(lambda: setattr(views, "AgentService", original_agent))
+
+        WhatsAppIdentity.objects.create(
+            workspace=self.workspace, user=self.owner, phone="256772000111",
+            verified_at=timezone.now(),
+        )
+
+    def post(self, wamid):
+        payload = {
+            "entry": [
+                {
+                    "changes": [
+                        {
+                            "value": {
+                                "messages": [
+                                    {
+                                        "from": "256772000111", "id": wamid,
+                                        "type": "text",
+                                        "text": {"body": "How much did I sell today?"},
+                                    }
+                                ]
+                            }
+                        }
+                    ]
+                }
+            ]
+        }
+        body = json.dumps(payload).encode()
+        signature = "sha256=" + hmac.new(b"shh", body, hashlib.sha256).hexdigest()
+        return self.client.post(
+            "/api/webhooks/whatsapp/", data=body, content_type="application/json",
+            HTTP_X_HUB_SIGNATURE_256=signature,
+        )
+
+    def test_the_same_message_is_answered_once(self):
+        self.assertEqual(self.post("wamid.AAA").status_code, 200)
+        self.assertEqual(self.post("wamid.AAA").status_code, 200)  # Meta retrying
+
+        self.assertEqual(self.answered, 1, "a redelivered message was answered twice")
+        self.assertEqual(len(self.sent), 1, "the shop was replied to twice")
+
+    def test_different_messages_are_both_answered(self):
+        self.post("wamid.AAA")
+        self.post("wamid.BBB")
+        self.assertEqual(self.answered, 2)
+
+    def test_a_message_with_no_id_is_still_answered(self):
+        """Nothing to deduplicate on; answering beats dropping it."""
+        self.post("")
+        self.assertEqual(self.answered, 1)
+
+    def test_the_claim_is_taken_before_the_work(self):
+        from apps.ai.models import InboundMessage
+
+        self.post("wamid.CCC")
+        self.assertTrue(
+            InboundMessage.objects.filter(provider_message_id="wamid.CCC").exists()
+        )
