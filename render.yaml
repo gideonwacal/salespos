@@ -111,6 +111,33 @@ services:
         value: "60"
       - key: JWT_REFRESH_DAYS
         value: "14"
+
+  # The platform owner's Control Room. A separate site from the shop app on
+  # purpose: it shares nothing with it but the API, and should not be served
+  # from the address customers use.
+  #
+  # Without this deployed there is nowhere for the shop app's "Control Room"
+  # link to point, and clicking it reaches localhost on whoever clicked it.
+  #
+  # A plain Vite SPA with a hash router, so no rewrite rules are needed - any
+  # static host serves it as-is. `npm install` rather than `npm ci`: there is
+  # no lockfile in console/.
+  - type: web
+    name: salespos-console
+    runtime: static
+    rootDir: console
+    buildCommand: npm install && npm run build
+    staticPublishPath: dist
+    envVars:
+      # Where the API lives, e.g. https://salespos-api.onrender.com/api
+      - key: VITE_API_URL
+        sync: false
+    headers:
+      # Nothing here is for the public, and an index of every business on the
+      # platform is not something to let a crawler keep.
+      - path: /*
+        name: X-Robots-Tag
+        value: noindex, nofollow
       # --- the WhatsApp assistant ---
       # All optional. With none of these set the assistant simply reports
       # itself unavailable; nothing else in the app changes.

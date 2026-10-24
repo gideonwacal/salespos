@@ -15,7 +15,13 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Building2, ExternalLink, Search, ShieldCheck, Store } from "lucide-react";
-import { CONSOLE_URL, fetchMe, setWorkspaceId, type ApiWorkspace } from "@/lib/api";
+import {
+  CONSOLE_URL,
+  consoleConfigured,
+  fetchMe,
+  setWorkspaceId,
+  type ApiWorkspace,
+} from "@/lib/api";
 import { businessFrom } from "@/lib/auth";
 import { mergeServerBusiness } from "@/lib/demo";
 import { useAuth } from "@/hooks/useAuth";
@@ -47,6 +53,9 @@ function PlatformChooser() {
   const [query, setQuery] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [fetching, setFetching] = useState(true);
+  // Safe to read directly: this route is ssr:false, so there is no server
+  // render to disagree with.
+  const hasConsole = consoleConfigured();
 
   useEffect(() => {
     // Anyone who is not the platform owner has a shop of their own and no
@@ -100,22 +109,43 @@ function PlatformChooser() {
 
         <h1 className="text-3xl font-extrabold leading-tight">Where are you headed?</h1>
 
-        <a href={CONSOLE_URL} className="block">
-          <Card className="transition-shadow hover:shadow-lg">
+        {/* The console is a separate site and is deployed separately. Offering
+            the link before it exists sends the browser to localhost:8090 —
+            the visitor's own machine — which reads as "server down" and gives
+            no clue what is actually wrong. */}
+        {hasConsole ? (
+          <a href={CONSOLE_URL} className="block">
+            <Card className="transition-shadow hover:shadow-lg">
+              <CardContent className="flex items-center gap-4 p-5">
+                <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                  <Building2 className="size-5" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-base font-bold">Control Room</p>
+                  <p className="text-sm text-muted-foreground">
+                    Every business, their payments, users and activity — and who needs reviewing.
+                  </p>
+                </div>
+                <ExternalLink className="size-4 shrink-0 text-muted-foreground" />
+              </CardContent>
+            </Card>
+          </a>
+        ) : (
+          <Card className="border-dashed">
             <CardContent className="flex items-center gap-4 p-5">
-              <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+              <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-muted text-muted-foreground">
                 <Building2 className="size-5" />
               </span>
               <div className="min-w-0 flex-1">
-                <p className="text-base font-bold">Control Room</p>
+                <p className="text-base font-bold text-muted-foreground">Control Room</p>
                 <p className="text-sm text-muted-foreground">
-                  Every business, their payments, users and activity — and who needs reviewing.
+                  Not deployed yet. Publish the <code>console/</code> site, then set{" "}
+                  <code>VITE_CONSOLE_URL</code> on this app and redeploy.
                 </p>
               </div>
-              <ExternalLink className="size-4 shrink-0 text-muted-foreground" />
             </CardContent>
           </Card>
-        </a>
+        )}
 
         <Card>
           <CardHeader className="pb-3">

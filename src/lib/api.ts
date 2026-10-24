@@ -240,6 +240,26 @@ export const CONSOLE_URL = (import.meta.env.VITE_CONSOLE_URL ?? "http://localhos
   "",
 );
 
+/**
+ * Is there actually a Control Room to send somebody to?
+ *
+ * The console is a separate site and has to be deployed separately. When
+ * VITE_CONSOLE_URL is not set the fallback above points at localhost:8090 —
+ * which, from a deployed app, is the *visitor's* own machine. Clicking it
+ * gives them "server down" and no hint as to why, so the link is withheld
+ * instead of offered broken.
+ *
+ * Checked at call time, not at module load: this file is evaluated during SSR
+ * where there is no window, and a value baked in then would disagree with the
+ * browser on hydration.
+ */
+export function consoleConfigured(): boolean {
+  if (import.meta.env.VITE_CONSOLE_URL) return true;
+  if (typeof window === "undefined") return false;
+  // On a developer's own machine the fallback is the right answer.
+  return /^(localhost|127\.0\.0\.1)$/.test(window.location.hostname);
+}
+
 export type MeResponse = {
   user: ApiUser;
   workspaces: ApiWorkspace[];

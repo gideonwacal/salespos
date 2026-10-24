@@ -149,7 +149,21 @@ talking to each other.
 ## 5. Platform console (your private site)
 
 The console in [`console/`](console/README.md) is a separate site from the shop
-app. Deploy it as a **second** Vercel project from the same repository:
+app. **Until it is deployed there is nowhere for the shop app's "Control Room"
+link to point** — it falls back to `localhost:8090`, which from a deployed app
+means whoever clicked it, so they get "server down" and no explanation. The
+app now hides the link rather than offering it broken, but the Control Room
+still does not exist until you do one of the following.
+
+### Option A — with the Render blueprint (one step)
+
+`render.yaml` declares the console as a static site alongside the API. Re-sync
+the blueprint in Render and it is built and published. Then set its
+`VITE_API_URL` to `https://salespos-api.onrender.com/api`.
+
+### Option B — a second Vercel project
+
+Deploy it from the same repository:
 
 | Field | Value |
 | --- | --- |
@@ -159,11 +173,23 @@ app. Deploy it as a **second** Vercel project from the same repository:
 | Output Directory | `dist` |
 | Env var `VITE_API_URL` | `https://salespos-api.onrender.com/api` |
 
-Then add its URL to the API's CORS list, after the shop's:
+### Either way, two more settings
+
+Add the console's URL to the API's CORS list, after the shop's:
 
 ```
-CORS_ALLOWED_ORIGINS = https://salespos.vercel.app,https://your-console.vercel.app
+CORS_ALLOWED_ORIGINS = https://salespos.vercel.app,https://salespos-console.onrender.com
 ```
+
+And tell the shop app where the Control Room is, so the link on `/platform`
+appears at all. On **Vercel**, for the shop project:
+
+```
+VITE_CONSOLE_URL = https://salespos-console.onrender.com
+```
+
+Redeploy the shop app afterwards: Vite bakes this in at build time, so
+changing it without rebuilding changes nothing.
 
 Create your platform owner account once, from Render → your service → **Shell**:
 
