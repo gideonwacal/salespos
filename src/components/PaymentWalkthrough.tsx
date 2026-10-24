@@ -14,7 +14,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { BadgeCheck, Check, Copy, Pause, Play, RotateCcw, Smartphone } from "lucide-react";
-import { planById, type PlanId } from "@/lib/demo";
+import { planById, SUBSCRIPTION_MONTHS, type PlanId } from "@/lib/demo";
 import { moneyIn } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -32,7 +32,7 @@ type Scene = {
 
 export function PaymentWalkthrough({
   plan = "growth",
-  months = 1,
+  months = SUBSCRIPTION_MONTHS,
   number,
   holder,
 }: {
@@ -43,7 +43,8 @@ export function PaymentWalkthrough({
   holder?: string;
 }) {
   const chosen = planById(plan);
-  const total = chosen.price_ugx * months;
+  // 25,000 buys three months; it is not a monthly rate to multiply.
+  const total = chosen.price_ugx;
   const amount = moneyIn(total, "UGX");
   const till = number || "0760 417 357";
 
@@ -51,7 +52,7 @@ export function PaymentWalkthrough({
     () => [
       {
         title: "Pick your package",
-        caption: `Choose the plan that fits the shop. ${chosen.name} is ${amount} a month.`,
+        caption: `SalesPos is ${amount} for ${months} months. One price, everything included.`,
       },
       {
         title: "Choose how to pay",
@@ -201,28 +202,23 @@ function Phone({
 }
 
 function ScenePlans({ plan, amount }: { plan: string; amount: string }) {
+  // One plan, so there is no grid of tiers to point at any more — just the
+  // single card the shop is about to pay for.
   return (
     <div className="space-y-2">
       <p className="font-bold">Plan &amp; billing</p>
-      {["Starter", "Growth", "Enterprise"].map((name) => (
-        <div
-          key={name}
-          className={cn(
-            "rounded-lg border p-2",
-            name === plan ? "border-primary bg-primary/10" : "border-border bg-card",
-          )}
-        >
-          <p className="font-semibold">{name}</p>
-          {name === plan && (
-            <>
-              <p className="text-[10px] text-muted-foreground">{amount} / month</p>
-              <div className="mt-1.5 rounded-md bg-primary px-2 py-1 text-center text-[10px] font-bold text-primary-foreground">
-                Pay for {name}
-              </div>
-            </>
-          )}
+      <div className="rounded-lg border border-primary bg-primary/10 p-2">
+        <p className="font-semibold">{plan}</p>
+        <p className="text-[10px] text-muted-foreground">
+          {amount} / {SUBSCRIPTION_MONTHS} months
+        </p>
+        <div className="mt-1.5 rounded-md bg-primary px-2 py-1 text-center text-[10px] font-bold text-primary-foreground">
+          Pay {amount}
         </div>
-      ))}
+      </div>
+      <p className="text-[10px] text-muted-foreground">
+        Everything is included. No seats to count, no modules locked away.
+      </p>
     </div>
   );
 }
@@ -339,7 +335,8 @@ function SceneDone({ plan }: { plan: string }) {
       <p className="text-sm font-extrabold">{plan} plan active</p>
       <Badge className="border-0 bg-success text-success-foreground text-[10px]">Paid</Badge>
       <p className="px-2 text-[10px] text-muted-foreground">
-        Every module is open again. Paying again adds months on top of the time you have left.
+        Everything is open again. Paying again adds three months on top of the time you
+        have left.
       </p>
     </div>
   );

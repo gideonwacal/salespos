@@ -7,6 +7,7 @@ import { Failed, Feed, Loading, Metric, PageTitle, Panel, STATE_LABEL } from "..
 const STATES: BusinessState[] = [
   "trial",
   "paying",
+  "referral_grace",
   "expired",
   "free",
   "suspended",
@@ -55,13 +56,46 @@ export function Overview() {
         </Link>
       </div>
 
-      <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+      <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         {STATES.map((state) => (
           <Link key={state} to="/businesses" query={{ state }}>
             <Metric label={STATE_LABEL[state]} value={count(data.states[state])} />
           </Link>
         ))}
       </div>
+
+      {/* How the invite scheme is doing. Opens are shown beside signups
+          because the gap between them is the thing worth watching: a lot of
+          opens and no signups means the link travels but the pitch does not. */}
+      <Panel className="mt-6" title="Referrals">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <Metric
+            label="Businesses referred"
+            value={count(data.referrals.signups)}
+            hint={`+${data.referrals.signups_30d} in 30 days`}
+          />
+          <Metric
+            label="Link opens"
+            value={count(data.referrals.link_opens)}
+            hint={
+              data.referrals.link_opens
+                ? `${Math.round(
+                    (data.referrals.signups / data.referrals.link_opens) * 100,
+                  )}% signed up`
+                : "none yet"
+            }
+          />
+          <Metric
+            label="Businesses sharing"
+            value={count(data.referrals.referring_businesses)}
+          />
+          <Metric
+            label="Claimed free days"
+            value={count(data.referrals.grace_granted)}
+            hint="3 days each, once"
+          />
+        </div>
+      </Panel>
 
       <Panel
         className="mt-6"

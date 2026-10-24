@@ -1,10 +1,12 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Check, Lightbulb, Minus, Smartphone } from "lucide-react";
+import { Check, Gift, Smartphone } from "lucide-react";
 import {
   PLANS,
+  REFERRAL_GRACE_DAYS,
+  REFERRALS_FOR_GRACE,
   planById,
   planHasModule,
   trialStatus,
@@ -229,41 +231,30 @@ function Billing() {
         />
       )}
 
-      <Card
-        className={cn(
-          "shadow-[var(--shadow-card)]",
-          advice.isUpgrade ? "border-primary" : "border-success/50",
-        )}
-      >
-        <CardContent className="space-y-2 pt-6">
-          <div className="flex flex-wrap items-center gap-2">
-            <Lightbulb className="size-4 text-primary" />
-            <p className="text-sm font-bold">
-              {advice.isUpgrade
-                ? `Suggested for ${business.name || "your shop"}: ${advised.name}`
-                : `${advised.name} suits how you are trading`}
-            </p>
-            <Badge variant="outline" className="border-primary/40 text-primary">
-              {industry.label}
-            </Badge>
-          </div>
-          <ul className="space-y-1 text-sm text-muted-foreground">
-            {advice.reasons.map((reason) => (
-              <li key={reason} className="flex gap-2">
-                <span aria-hidden="true">&bull;</span>
-                <span>{reason}</span>
-              </li>
-            ))}
-          </ul>
-          {advice.isUpgrade && (
-            <Button size="sm" disabled={!isOwner || status.suspended || status.free} onClick={() => pay(advice.recommended)}>
-              Move to {advised.name} &mdash; {moneyIn(advised.price_ugx, "UGX")}/month
+      {/* The other way past the lock. In front of the price rather than
+          hidden in the sidebar: a shop that cannot find 25,000 today is
+          exactly the one that needs to know this exists. */}
+      {!status.free && !status.suspended && !status.subscribed && (
+        <Card className="border-primary/40 shadow-[var(--shadow-card)]">
+          <CardContent className="flex flex-wrap items-center justify-between gap-3 pt-6">
+            <div>
+              <p className="flex items-center gap-2 text-sm font-bold">
+                <Gift className="size-4 text-primary" />
+                No cash today? Invite {REFERRALS_FOR_GRACE} businesses instead
+              </p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Get {REFERRALS_FOR_GRACE} shops signed up through your link and we&apos;ll
+                unlock SalesPos for {REFERRAL_GRACE_DAYS} more days. Once only.
+              </p>
+            </div>
+            <Button variant="outline" asChild>
+              <Link to="/referrals">Get my invite link</Link>
             </Button>
-          )}
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      )}
 
-      <div className="grid gap-4 lg:grid-cols-3">
+      <div className="grid gap-4">
         {PLANS.map((plan) => {
           const active = plan.id === business.plan && status.subscribed;
           return (
@@ -281,12 +272,15 @@ function Billing() {
                 </div>
                 <p className="text-2xl font-extrabold">
                   {moneyIn(plan.price_ugx, "UGX")}
-                  <span className="text-sm font-normal text-muted-foreground">/month</span>
+                  <span className="text-sm font-normal text-muted-foreground">
+                    {" "}
+                    for {plan.months} months
+                  </span>
                 </p>
                 <p className="text-xs text-muted-foreground">{plan.blurb}</p>
                 {!status.subscribed && (
                   <p className="text-[11px] font-medium text-muted-foreground">
-                    Limits below apply once your 14-day trial ends.
+                    Free for your first 14 days. Nothing is locked in the meantime.
                   </p>
                 )}
               </CardHeader>
@@ -307,10 +301,8 @@ function Billing() {
                   {!isOwner
                     ? "Only the owner can pay"
                     : active
-                      ? "Renew / add months"
-                      : status.subscribed
-                        ? `Switch to ${plan.name}`
-                        : `Pay for ${plan.name}`}
+                      ? "Renew for another 3 months"
+                      : `Pay ${moneyIn(plan.price_ugx, "UGX")}`}
                 </Button>
               </CardContent>
             </Card>
@@ -318,46 +310,7 @@ function Billing() {
         })}
       </div>
 
-      <Card className="shadow-[var(--shadow-card)]">
-        <CardHeader>
-          <CardTitle className="text-base">Modules included per package</CardTitle>
-          <p className="text-xs text-muted-foreground">
-            {status.onTrial
-              ? "Everything is unlocked during your 14-day trial. Once it ends, modules outside your package are hidden from the sidebar until you upgrade."
-              : "Locked modules are hidden from the sidebar until the plan is upgraded."}
-          </p>
-        </CardHeader>
-        <CardContent className="overflow-x-auto">
-          <table className="w-full min-w-[520px] text-sm">
-            <thead>
-              <tr className="border-b text-left text-xs uppercase text-muted-foreground">
-                <th className="py-2 font-semibold">Module</th>
-                {PLANS.map((p) => (
-                  <th key={p.id} className="py-2 text-center font-semibold">
-                    {p.name}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {MODULES.map(([id, label]) => (
-                <tr key={id} className="border-b last:border-0">
-                  <td className="py-2 font-medium">{label}</td>
-                  {PLANS.map((p) => (
-                    <td key={p.id} className="py-2 text-center">
-                      {planHasModule(p.id, id) ? (
-                        <Check className="mx-auto size-4 text-success" />
-                      ) : (
-                        <Minus className="mx-auto size-4 text-muted-foreground/50" />
-                      )}
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </CardContent>
-      </Card>
+
 
       {payments.length > 0 && (
         <Card className="shadow-[var(--shadow-card)]">

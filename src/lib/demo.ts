@@ -53,6 +53,8 @@ export type Business = {
   trial_ends: string;
   subscribed: boolean;
   paid_until: string | null;
+  /** End of the three days five referrals bought, if they earned them. */
+  referral_grace_until?: string | null;
   configured: boolean;
   /**
    * Is anybody being charged on this deployment yet?
@@ -75,7 +77,9 @@ export type AccountUser = {
   created_at: string;
 };
 
-export type PlanId = "starter" | "growth" | "enterprise";
+/** One plan now. The old tier names stay in the union so a workspace row
+ *  written under them still types, but nothing sells them. */
+export type PlanId = "standard" | "starter" | "growth" | "enterprise";
 
 export type ModuleId =
   | "pos"
@@ -89,69 +93,43 @@ export type ModuleId =
   | "accounting"
   | "staff";
 
+/** What a subscription costs. Mirrors SUBSCRIPTION_PRICE_UGX in Django. */
+export const SUBSCRIPTION_PRICE_UGX = 25_000;
+export const SUBSCRIPTION_MONTHS = 3;
+/** Signups that buy the one-time grace, and how long it lasts. */
+export const REFERRALS_FOR_GRACE = 5;
+export const REFERRAL_GRACE_DAYS = 3;
+
 export const PLANS: {
   id: PlanId;
   name: string;
   price: number;
-  /** What the shop actually pays by mobile money. Mirrors PLAN_PRICES_UGX in Django. */
+  /** What the shop actually pays by mobile money. */
   price_ugx: number;
+  /** How many months that buys. */
+  months: number;
   seats: number;
   blurb: string;
   features: string[];
   modules: ModuleId[];
 }[] = [
   {
-    id: "starter",
-    name: "Starter",
-    price: 19,
-    price_ugx: 50_000,
-    seats: 2,
-    blurb: "One counter, one owner. Everything you need to start selling.",
-    features: ["POS & receipts", "Inventory master grid", "Expense tracking", "2 user seats"],
-    modules: ["pos", "inventory", "stock", "expenses", "reports", "staff"],
-  },
-  {
-    id: "growth",
-    name: "Growth",
-    price: 49,
-    price_ugx: 100_000,
-    seats: 8,
-    blurb: "Busy shops with a team, credit customers and bottle deposits.",
-    features: [
-      "Everything in Starter",
-      "Credit & debtor management",
-      "Bottle / container deposits",
-      "Bulk & tiered pricing",
-      "Quotations & invoices",
-      "Shift management",
-      "8 user seats",
-    ],
-    modules: [
-      "pos",
-      "inventory",
-      "stock",
-      "expenses",
-      "reports",
-      "debtors",
-      "quotations",
-      "shifts",
-      "staff",
-    ],
-  },
-  {
-    id: "enterprise",
-    name: "Enterprise",
-    price: 99,
-    price_ugx: 150_000,
+    id: "standard",
+    name: "SalesPos",
+    price: 7,
+    price_ugx: SUBSCRIPTION_PRICE_UGX,
+    months: SUBSCRIPTION_MONTHS,
+    // No seat cap and no locked modules. Tiering a product this size spent
+    // more of the shop's attention deciding than the difference was worth.
     seats: 999,
-    blurb: "Wholesalers running multiple counters with full financial control.",
+    blurb: "Everything SalesPos does, for one price.",
     features: [
-      "Everything in Growth",
-      "Unlimited users",
-      "Profit & loss reporting",
-      "CSV import / export",
-      "Accounting & other reports",
-      "Priority support",
+      "POS, receipts & inventory",
+      "Credit customers & debtors",
+      "Expenses, profit & reports",
+      "Quotations, shifts & deposits",
+      "Unlimited staff accounts",
+      "Import / export",
     ],
     modules: [
       "pos",
@@ -1096,6 +1074,10 @@ export type TrialStatus = {
   suspended: boolean;
   daysLeft: number;
   expired: boolean;
+  /** Inside the three days five referrals bought. */
+  onReferralGrace: boolean;
+  /** Days left on that grace, 0 when it is not running. */
+  graceDaysLeft: number;
   /** true when the workspace must pay before using paid modules */
   locked: boolean;
 };
@@ -1116,6 +1098,8 @@ export function trialStatus(business: Business): TrialStatus {
       suspended: business.access === "suspended",
       daysLeft: 0,
       expired: false,
+      onReferralGrace: false,
+      graceDaysLeft: 0,
       locked: business.access === "suspended",
     };
   }
@@ -1127,6 +1111,19 @@ export function trialStatus(business: Business): TrialStatus {
   const expired = daysLeft <= 0;
   const free = business.access === "free";
   const suspended = business.access === "suspended";
+
+  // Three days bought with five referrals. Checked after the trial and before
+  // the lock, so a shop the server is still letting trade is not stopped here
+  // — the browser disagreeing with the server about this is how somebody gets
+  // shut out of a business they have paid for.
+  const graceEnd = business.referral_grace_until
+    ? new Date(business.referral_grace_until).getTime()
+    : 0;
+  const onReferralGrace = graceEnd > Date.now();
+  const graceDaysLeft = onReferralGrace
+    ? Math.max(0, Math.ceil((graceEnd - Date.now()) / 86400000))
+    : 0;
+
   return {
     onTrial: !subscribed && !free && !suspended && !expired,
     subscribed,
@@ -1134,7 +1131,9 @@ export function trialStatus(business: Business): TrialStatus {
     suspended,
     daysLeft,
     expired,
-    locked: suspended || (!subscribed && !free && expired),
+    onReferralGrace,
+    graceDaysLeft,
+    locked: suspended || (!subscribed && !free && expired && !onReferralGrace),
   };
 }
 

@@ -305,11 +305,13 @@ AIRTEL_CURRENCY = os.environ.get("AIRTEL_CURRENCY", "UGX").strip()
 
 # Is anybody being charged yet?
 #
-# Off while the product is being given away: no trial that ends, no package
-# that limits anything, no billing page. Nothing is deleted by switching it
-# off — plans, payments and the trial clock are all still here, and setting
-# BILLING_ENABLED=1 brings them back exactly as they were.
-BILLING_ENABLED = os.environ.get("BILLING_ENABLED", "0") != "0"
+# On: fourteen days free, then 25,000 shillings buys three months — or five
+# referred signups buy three days, once.
+#
+# Set BILLING_ENABLED=0 to give the product away again. Nothing is deleted by
+# doing so: the trial clock, the payments and the referral counts all keep
+# running, they simply stop locking anybody out.
+BILLING_ENABLED = os.environ.get("BILLING_ENABLED", "1") != "0"
 
 # Where the app itself runs, for links back to it. Falling back to the first
 # allowed origin means a normal deployment needs no extra setting.
@@ -359,6 +361,9 @@ REST_FRAMEWORK["DEFAULT_THROTTLE_RATES"] = {
     "login": "10/minute",
     "billing_info": "20/hour",
     "payment_submit": "10/day",
+    # An open endpoint that writes a row. Generous enough for a link genuinely
+    # doing the rounds, tight enough that nobody fills the table from a loop.
+    "referral_visit": "60/hour",
 }
 
 

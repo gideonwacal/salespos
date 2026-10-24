@@ -18,6 +18,7 @@ import {
   CreditCard,
   FileText,
   FileSpreadsheet,
+  Gift,
   CalendarClock,
   Layers,
   Car,
@@ -168,6 +169,7 @@ const NAV: {
     module: "staff",
   },
   { to: "/billing", label: "Plan & Billing", icon: CreditCard, owner: true, manager: false },
+  { to: "/referrals", label: "Invite & earn", icon: Gift, owner: true, manager: false },
   { to: "/data", label: "Import & Export", icon: FileSpreadsheet, owner: true, manager: true },
   { to: "/settings", label: "Business Settings", icon: Settings, owner: true, manager: false },
 ];
@@ -209,8 +211,12 @@ export function AppShell({ children }: { children: ReactNode }) {
   const items = (demo ? NAV : NAV.filter((n) => (isOwner ? n.owner : n.manager)))
     .filter((n) => inPlan(n.module))
     .filter((n) => !n.feature || hasFeature(industry, n.feature))
-    // Nothing to pay for yet, so nothing to show.
+    // Nothing to pay for yet, so nothing to show — and nothing to earn free
+    // days off either, since there is no lock to get past.
     .filter((n) => n.to !== "/billing" || !billingOff(business))
+    .filter((n) => n.to !== "/referrals" || !billingOff(business))
+    // inPlan() above hides anything a locked shop cannot open. "Invite & earn"
+    // is how it gets unlocked, so it is never one of them.
     // A pharmacy calls it the Dispensary, a hardware store just Stock; and a
     // supermarket counts departments where a pharmacy counts drug classes.
     .map((n) =>

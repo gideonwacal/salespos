@@ -105,10 +105,14 @@ def default_trial_ends():
 class Workspace(models.Model):
     """One business. The tenant boundary for every other table."""
 
+    # One price, one plan. The old starter/growth/enterprise tiers are kept as
+    # choices so rows written under them still validate, but nothing sells them
+    # any more and they all price the same.
     PLAN_CHOICES = [
-        ("starter", "Starter"),
-        ("growth", "Growth"),
-        ("enterprise", "Enterprise"),
+        ("standard", "Standard"),
+        ("starter", "Starter (retired)"),
+        ("growth", "Growth (retired)"),
+        ("enterprise", "Enterprise (retired)"),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -142,7 +146,7 @@ class Workspace(models.Model):
         ("suspended", "Suspended"),
     ]
 
-    plan = models.CharField(max_length=20, choices=PLAN_CHOICES, default="starter")
+    plan = models.CharField(max_length=20, choices=PLAN_CHOICES, default="standard")
     access = models.CharField(max_length=20, choices=ACCESS_CHOICES, default="standard")
     access_note = models.CharField(max_length=255, blank=True, default="")
 
@@ -167,6 +171,18 @@ class Workspace(models.Model):
     paid_until = models.DateTimeField(null=True, blank=True)
     configured = models.BooleanField(default=False)
 
+    # The code at the end of this business's invite link. Issued on demand
+    # rather than at creation, so businesses that never share a link never
+    # consume one.
+    referral_code = models.CharField(
+        max_length=12, unique=True, null=True, blank=True, db_index=True
+    )
+    # Three days bought with five signups, instead of with money. Granted once
+    # and once only: the point is to get a shop over the line to paying, not to
+    # give it a way of never paying.
+    referral_grace_until = models.DateTimeField(null=True, blank=True)
+    referral_grace_granted_at = models.DateTimeField(null=True, blank=True)
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -179,13 +195,19 @@ class Workspace(models.Model):
         return bool(self.trial_ends and self.trial_ends > timezone.now())
 
     @property
+    def on_referral_grace(self) -> bool:
+        """Inside the three days five referrals bought."""
+        return bool(self.referral_grace_until and self.referral_grace_until > timezone.now())
+
+    @property
     def locked(self) -> bool:
         """Is this business shut out of its own data right now?
 
         Free access never locks — that is what the platform owner grants it
         for. Suspension always does. Everything else is the ordinary path: the
         trial runs out, and without a live subscription the shop stops until it
-        pays.
+        pays — unless it earned the one-time referral grace, which buys three
+        days and then never again.
         """
         if self.access == "free":
             return False
@@ -193,7 +215,9 @@ class Workspace(models.Model):
             return True
         if self.subscription_active:
             return False
-        return not self.on_trial
+        if self.on_trial:
+            return False
+        return not self.on_referral_grace
 
     class Meta:
         db_table = "workspaces"
@@ -230,9 +254,23 @@ class Membership(models.Model):
         return f"{self.user.email} @ {self.workspace.name} ({self.role})"
 
 
-# Monthly price in shillings. Mirrors `price_ugx` on PLANS in src/lib/demo.ts;
-# the server prices a payment itself so the browser can't name its own amount.
-PLAN_PRICES_UGX = {"starter": 50_000, "growth": 100_000, "enterprise": 150_000}
+# One subscription: 25,000 shillings buys three months. The server prices
+# every payment itself, so the browser can never name its own amount.
+SUBSCRIPTION_PRICE_UGX = 25_000
+SUBSCRIPTION_MONTHS = 3
+
+# How many signups buy the one-time grace, and how long it lasts.
+REFERRALS_FOR_GRACE = 5
+REFERRAL_GRACE_DAYS = 3
+
+# The retired tiers still price, so a payment row written before the change can
+# still be read back. Nothing offers them.
+PLAN_PRICES_UGX = {
+    "standard": SUBSCRIPTION_PRICE_UGX,
+    "starter": 50_000,
+    "growth": 100_000,
+    "enterprise": 150_000,
+}
 MONTHS_CHOICES = [(1, "1 month"), (3, "3 months"), (6, "6 months"), (12, "12 months")]
 
 
@@ -309,3 +347,115 @@ class SubscriptionPayment(models.Model):
         self.note = note or self.note
         self.reviewed_at = timezone.now()
         self.save(update_fields=["status", "note", "reviewed_at"])
+
+
+# --- referrals ----------------------------------------------------------------
+
+
+def new_referral_code() -> str:
+    """A short code for the end of an invite link.
+
+    No vowels and no 0/O/1/I/L: these get read off a phone screen and typed
+    into another, and a code nobody can misread is worth more than a short one.
+    """
+    import secrets
+
+    alphabet = "BCDFGHJKMNPQRSTVWXYZ23456789"
+    return "".join(secrets.choice(alphabet) for _ in range(7))
+
+
+class ReferralVisit(models.Model):
+    """Somebody opened a business's invite link.
+
+    Counted for the owner to watch, never for the grace: a page view is free to
+    manufacture, and five private windows must not buy three days. Only a
+    completed signup counts toward the unlock, which is what `Referral` is.
+
+    No IP address is stored, only a one-way digest of it, which is enough to
+    tell twenty opens by one person from twenty people and nothing more.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    workspace = models.ForeignKey(
+        Workspace, on_delete=models.CASCADE, related_name="referral_visits"
+    )
+    visitor_digest = models.CharField(max_length=64, db_index=True)
+    # Trimmed hard: enough to say "opened on a phone", not enough to fingerprint.
+    device = models.CharField(max_length=40, blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        db_table = "referral_visits"
+        ordering = ["-created_at"]
+        indexes = [models.Index(fields=["workspace", "-created_at"])]
+
+    def __str__(self):
+        return f"visit to {self.workspace_id}"
+
+    @staticmethod
+    def digest(request) -> str:
+        """A stable, non-reversible handle for one visitor."""
+        import hashlib
+
+        from apps.console.models import client_ip
+
+        raw = f"{client_ip(request) or ''}|{request.META.get('HTTP_USER_AGENT', '')[:200]}"
+        return hashlib.sha256(raw.encode()).hexdigest()
+
+    @staticmethod
+    def device_of(request) -> str:
+        agent = request.META.get("HTTP_USER_AGENT", "").lower()
+        if "android" in agent:
+            return "Android"
+        if "iphone" in agent or "ipad" in agent:
+            return "iPhone"
+        if "windows" in agent or "macintosh" in agent or "linux" in agent:
+            return "Computer"
+        return ""
+
+
+class Referral(models.Model):
+    """A business that signed up through another business's link.
+
+    The referred workspace is unique: a business is somebody's referral once,
+    for good. Without that, deleting and re-registering would let one pair of
+    accounts mint referrals endlessly.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    referrer = models.ForeignKey(
+        Workspace, on_delete=models.CASCADE, related_name="referrals_made"
+    )
+    referred = models.OneToOneField(
+        Workspace, on_delete=models.CASCADE, related_name="referred_by"
+    )
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        db_table = "referrals"
+        ordering = ["-created_at"]
+        indexes = [models.Index(fields=["referrer", "-created_at"])]
+        constraints = [
+            # A business cannot refer itself, which is the first thing anybody
+            # tries. The application checks this too; this is the backstop.
+            models.CheckConstraint(
+                check=~models.Q(referrer=models.F("referred")),
+                name="referral_not_self",
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.referrer_id} -> {self.referred_id}"
+
+
+def subscription_price(plan: str = "standard", months: int = SUBSCRIPTION_MONTHS) -> int:
+    """What to charge, in shillings.
+
+    25,000 buys three months — it is not a monthly rate, and multiplying it by
+    the number of months would bill a shop 75,000 for what it was quoted
+    25,000 for. The retired tiers were genuinely per-month, so those still
+    multiply.
+    """
+    if plan == "standard":
+        return SUBSCRIPTION_PRICE_UGX
+    return PLAN_PRICES_UGX[plan] * months

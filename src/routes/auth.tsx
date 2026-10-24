@@ -23,6 +23,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { INDUSTRY_GROUPS, resolveIndustry } from "@/lib/industry";
+import { clearReferral, takeReferral } from "@/routes/r.$code";
 import { PasswordInput } from "@/components/PasswordInput";
 import heroImage from "@/assets/market-hero.jpg";
 
@@ -103,7 +104,12 @@ function AuthPage() {
         whatsappNumber: signUp.whatsapp.trim(),
         password: signUp.password,
         industry: signUp.industry,
+        // Set by /r/<code> if they arrived through somebody's invite link.
+        referralCode: takeReferral(),
       });
+      // Spent, win or lose. Leaving it behind would credit a second business
+      // to the same link if they signed up twice from one browser.
+      clearReferral();
 
       toast.success("Workspace created — let's set up your business");
 

@@ -100,6 +100,7 @@ const STATE: Record<BusinessState, [string, string]> = {
   trial: ["On trial", "border-warn/40 text-warn"],
   paying: ["Paying", "border-ok/40 text-ok"],
   expired: ["Trial ended", "border-line text-dim"],
+  referral_grace: ["Referral days", "border-info/40 text-info"],
   free: ["Free access", "border-info/40 text-info"],
   suspended: ["Suspended", "border-bad/50 text-bad"],
 };

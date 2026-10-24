@@ -17,7 +17,15 @@ from rest_framework.permissions import BasePermission
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.accounts.models import Membership, SubscriptionPayment, User, Workspace
+from apps.accounts import referrals
+from apps.accounts.models import (
+    Membership,
+    Referral,
+    ReferralVisit,
+    SubscriptionPayment,
+    User,
+    Workspace,
+)
 from apps.console.models import ActivityLog
 from apps.inventory.models import Product
 from apps.sales.models import Sale
@@ -72,6 +80,11 @@ def billing_state(workspace, now):
         return "paying"
     if workspace.trial_ends and workspace.trial_ends > now:
         return "trial"
+    # Three days bought with five referrals. A state of its own rather than
+    # folded into "trial": the console would otherwise say a business is
+    # trialling when what it is really doing is running out of favours.
+    if workspace.referral_grace_until and workspace.referral_grace_until > now:
+        return "referral_grace"
     return "expired"
 
 
@@ -126,7 +139,10 @@ class OverviewView(ConsoleView):
         workspaces = list(Workspace.objects.all())
         # Every state billing_state can return has to have a bucket here, or
         # counting them raises a KeyError and the whole page 500s.
-        states = {"trial": 0, "paying": 0, "expired": 0, "free": 0, "suspended": 0}
+        states = {
+            "trial": 0, "paying": 0, "expired": 0, "free": 0,
+            "suspended": 0, "referral_grace": 0,
+        }
         for workspace in workspaces:
             states[billing_state(workspace, now)] += 1
         # Counted beside them rather than among them: a business can be paying
@@ -154,6 +170,20 @@ class OverviewView(ConsoleView):
                 "activity_24h": ActivityLog.objects.filter(
                     created_at__gte=now - timedelta(hours=24)
                 ).count(),
+                "referrals": {
+                    "signups": Referral.objects.count(),
+                    "signups_30d": Referral.objects.filter(
+                        created_at__gte=now - timedelta(days=30)
+                    ).count(),
+                    "link_opens": ReferralVisit.objects.count(),
+                    # How many businesses bought themselves three days this way.
+                    "grace_granted": Workspace.objects.filter(
+                        referral_grace_granted_at__isnull=False
+                    ).count(),
+                    "referring_businesses": Referral.objects.values("referrer")
+                    .distinct()
+                    .count(),
+                },
                 "recent_activity": [
                     activity_row(e)
                     for e in ActivityLog.objects.select_related("user", "workspace")[:15]
@@ -253,7 +283,45 @@ class BusinessReviewView(ConsoleView):
 class BusinessDetailView(ConsoleView):
     """GET/PATCH /api/console/businesses/<id>/ — look at one business, decide its fate."""
 
-    EDITABLE = {"access", "access_note", "plan", "trial_ends", "paid_until", "subscribed"}
+    EDITABLE = {
+        "access", "access_note", "plan", "trial_ends", "paid_until", "subscribed",
+        # Editable so a grace granted in error can be taken back, or extended
+        # by hand for a business worth keeping.
+        "referral_grace_until",
+    }
+
+    def referral_block(self, workspace):
+        """Who this business brought in, and who brought this business.
+
+        Both directions matter. One says whether the scheme is working for
+        them; the other says whether somebody is minting accounts to unlock
+        their own.
+        """
+        inbound = getattr(workspace, "referred_by", None)
+        data = referrals.counts(workspace)
+        return {
+            "code": workspace.referral_code or None,
+            "opens": data["opens"],
+            "total_opens": data["total_opens"],
+            "signups": data["signups"],
+            "needed": data["needed"],
+            "grace_granted_at": iso(workspace.referral_grace_granted_at),
+            "grace_until": iso(workspace.referral_grace_until),
+            "grace_active": data["grace_active"],
+            "referred_by": (
+                {
+                    "id": str(inbound.referrer_id),
+                    "name": inbound.referrer.name,
+                    "joined": iso(inbound.created_at),
+                }
+                if inbound
+                else None
+            ),
+            "businesses": [
+                {**row, "joined": iso(row["joined"])}
+                for row in referrals.referred_businesses(workspace)
+            ],
+        }
 
     def payload(self, workspace):
         now = timezone.now()
@@ -280,6 +348,7 @@ class BusinessDetailView(ConsoleView):
             "reviewed_at": iso(workspace.reviewed_at),
             "reviewed_by": workspace.reviewed_by.email if workspace.reviewed_by else None,
             "created_at": iso(workspace.created_at),
+            "referral": self.referral_block(workspace),
             "stats": {
                 "sales": sales.count(),
                 "sales_total": str(sales.aggregate(t=Sum("total_amount"))["t"] or 0),

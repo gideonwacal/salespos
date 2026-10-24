@@ -26,7 +26,11 @@ const ROUTE_MODULES: [string, ModuleId][] = [
   ["/staff", "staff"],
 ];
 
-const ALWAYS_ALLOWED = ["/billing", "/settings", "/setup"];
+// Reachable even when the shop is locked out of everything else. /referrals
+// has to be here: it is the one page that can lift the lock without paying,
+// and redirecting it to /billing would hide the alternative from exactly the
+// people who need it.
+const ALWAYS_ALLOWED = ["/billing", "/referrals", "/settings", "/setup"];
 
 export const Route = createFileRoute("/_authenticated")({
   ssr: false,

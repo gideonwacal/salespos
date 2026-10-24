@@ -198,6 +198,8 @@ export async function register(input: {
   industry?: string;
   /** The handset the owner wants to run the business from, over WhatsApp. */
   whatsappNumber?: string;
+  /** The code from the invite link they arrived through, if any. */
+  referralCode?: string;
 }) {
   const data = await request<{
     access: string;
@@ -223,6 +225,7 @@ export async function register(input: {
       business_name: input.businessName,
       industry: input.industry ?? "",
       whatsapp_number: input.whatsappNumber ?? "",
+      referral_code: input.referralCode ?? "",
     }),
   });
 
@@ -455,6 +458,10 @@ export type BillingInfo = {
   number: string;
   name: string;
   currency: string;
+  /** The one subscription. What to read; `prices` is only for old clients. */
+  subscription?: { plan: string; price: number; months: number };
+  /** Signups that buy the one-time grace, and how long it lasts. */
+  referral?: { signups_needed: number; grace_days: number };
   prices: Record<string, number>;
   /** Every configured channel. Empty means nothing is set up on the server. */
   channels?: PaymentChannel[];
@@ -538,4 +545,47 @@ export function submitSubscriptionPayment(input: {
     method: "POST",
     body: JSON.stringify(input),
   });
+}
+
+/* --- referrals -------------------------------------------------------- */
+
+export type ReferralSummary = {
+  code: string;
+  link: string;
+  /** Distinct people who opened the link. */
+  opens: number;
+  /** Every open, including the same person twice. */
+  total_opens: number;
+  signups: number;
+  needed: number;
+  remaining: number;
+  grace_days: number;
+  grace_granted: boolean;
+  grace_until: string | null;
+  grace_active: boolean;
+  businesses: { id: string; name: string; joined: string; subscribed: boolean }[];
+  visits: { opened: string; device: string }[];
+};
+
+export function fetchReferrals() {
+  return request<ReferralSummary>("/referrals/me/");
+}
+
+/**
+ * Record that somebody opened an invite link.
+ *
+ * Unauthenticated on purpose: whoever is following the link has no account
+ * yet, which is the whole point of the link. Failure is ignored — a visit that
+ * goes uncounted must never stop someone reaching the sign-up page.
+ */
+export async function trackReferralVisit(code: string) {
+  try {
+    return await request<{ ok: boolean; business: string | null }>("/referrals/visit/", {
+      method: "POST",
+      auth: false,
+      body: JSON.stringify({ code }),
+    });
+  } catch {
+    return { ok: false, business: null };
+  }
 }

@@ -14,13 +14,22 @@ from rest_framework_simplejwt.views import TokenObtainPairView
 from apps.accounts.models import (
     MONTHS_CHOICES,
     PLAN_PRICES_UGX,
+    REFERRAL_GRACE_DAYS,
+    REFERRALS_FOR_GRACE,
+    SUBSCRIPTION_MONTHS,
+    SUBSCRIPTION_PRICE_UGX,
     Membership,
     SubscriptionPayment,
     User,
     Workspace,
+    subscription_price,
 )
-from apps.accounts import momo, verification
+import logging
+
+from apps.accounts import momo, referrals, verification
 from apps.ai import onboarding
+
+logger = logging.getLogger(__name__)
 from apps.accounts.serializers import (
     InviteMemberSerializer,
     MembershipSerializer,
@@ -58,6 +67,17 @@ class RegisterView(APIView):
         sent = False
         if settings.REQUIRE_EMAIL_VERIFICATION:
             _, sent = verification.issue_verification(user, business=workspace.name)
+
+        # Credit whoever sent them, if they arrived through a link. Failure
+        # here must not cost somebody their account, so it is swallowed: a
+        # referral that goes uncounted is a nuisance, a sign-up that 500s is a
+        # lost business.
+        try:
+            referrer = referrals.resolve(result.get("referral_code", ""))
+            if referrer is not None:
+                referrals.attribute(referrer=referrer, referred=workspace)
+        except Exception:  # noqa: BLE001
+            logger.exception("Could not attribute a referral for %s", workspace.id)
 
         # The assistant's welcome, if they gave a number. Deliberately outside
         # the serializer's atomic block, and unable to fail the sign-up: a shop
@@ -447,6 +467,17 @@ class BillingInfoView(APIView):
                 "number": settings.SUBSCRIPTION_MOMO_NUMBER,
                 "name": settings.SUBSCRIPTION_MOMO_NAME,
                 "currency": "UGX",
+                # One subscription now. `prices` is kept for clients written
+                # against the old tiers; `subscription` is what to read.
+                "subscription": {
+                    "plan": "standard",
+                    "price": SUBSCRIPTION_PRICE_UGX,
+                    "months": SUBSCRIPTION_MONTHS,
+                },
+                "referral": {
+                    "signups_needed": REFERRALS_FOR_GRACE,
+                    "grace_days": REFERRAL_GRACE_DAYS,
+                },
                 "prices": PLAN_PRICES_UGX,
                 "channels": payment_channels(),
             }
@@ -456,17 +487,14 @@ class BillingInfoView(APIView):
 
 
 def _plan_and_months(request):
-    """The two things a payment is for, priced by us and never by the browser."""
-    plan = str(request.data.get("plan", "")).strip()
-    if plan not in PLAN_PRICES_UGX:
-        raise ValidationError({"plan": "Choose one of the published plans."})
-    try:
-        months = int(request.data.get("months", 1))
-    except (TypeError, ValueError):
-        raise ValidationError({"months": "Choose how many months."})
-    if months not in dict(MONTHS_CHOICES):
-        raise ValidationError({"months": "Choose how many months."})
-    return plan, months
+    """What a payment is for.
+
+    There is one subscription now, so there is nothing to choose and nothing
+    for the browser to get wrong. Whatever it sends, the shop is buying three
+    months of the standard plan at the published price — the server has always
+    priced this itself, and now it picks the plan too.
+    """
+    return "standard", SUBSCRIPTION_MONTHS
 
 
 class MobileMoneyChargeView(APIView):
@@ -503,7 +531,7 @@ class MobileMoneyChargeView(APIView):
             raise ValidationError({"phone": "Enter the phone number to charge."})
 
         plan, months = _plan_and_months(request)
-        total = PLAN_PRICES_UGX[plan] * months
+        total = subscription_price(plan, months)
         currency = "UGX"
         reference = momo.new_reference()
 

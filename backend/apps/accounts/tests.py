@@ -11,6 +11,7 @@ from django.utils import timezone
 from rest_framework.test import APITestCase
 
 from apps.accounts.models import (
+    SUBSCRIPTION_PRICE_UGX,
     PLAN_PRICES_UGX,
     EmailVerification,
     Membership,
@@ -212,7 +213,10 @@ class SubscriptionPaymentTests(APITestCase):
     def test_owner_submission_is_priced_by_the_server_and_stays_pending(self):
         response = self.submit(self.owner)
         self.assertEqual(response.status_code, 201)
-        self.assertEqual(Decimal(response.data["amount"]), PLAN_PRICES_UGX["growth"] * 3)
+        # One subscription now: whatever the browser names, the server bills
+        # 25,000 for three months.
+        self.assertEqual(Decimal(response.data["amount"]), SUBSCRIPTION_PRICE_UGX)
+        self.assertEqual(response.data["plan"], "standard")
         self.assertEqual(response.data["status"], "pending")
         self.assertEqual(response.data["transaction_id"], "ABC123456")
         self.workspace.refresh_from_db()
@@ -231,13 +235,15 @@ class SubscriptionPaymentTests(APITestCase):
         payment.approve()
         self.workspace.refresh_from_db()
         self.assertTrue(self.workspace.subscribed)
-        self.assertEqual(self.workspace.plan, "growth")
+        self.assertEqual(self.workspace.plan, "standard")
         first_until = self.workspace.paid_until
 
-        self.submit(self.owner, transaction_id="XYZ987654", months=1)
+        # Paying again stacks a second three months on what is left, rather
+        # than restarting the clock and losing the time already bought.
+        self.submit(self.owner, transaction_id="XYZ987654")
         SubscriptionPayment.objects.get(transaction_id="XYZ987654").approve()
         self.workspace.refresh_from_db()
-        self.assertEqual(self.workspace.paid_until, first_until + timedelta(days=30))
+        self.assertEqual(self.workspace.paid_until, first_until + timedelta(days=90))
 
     def test_owner_cannot_mark_their_own_workspace_as_paid(self):
         self.client.force_authenticate(user=self.owner)
@@ -248,7 +254,7 @@ class SubscriptionPaymentTests(APITestCase):
         )
         self.workspace.refresh_from_db()
         self.assertFalse(self.workspace.subscribed)
-        self.assertEqual(self.workspace.plan, "starter")
+        self.assertEqual(self.workspace.plan, "standard")
 
     def test_only_the_owner_is_shown_the_payment_number(self):
         self.client.force_authenticate(user=self.manager)
@@ -454,7 +460,7 @@ class MobileMoneyChargeTests(APITestCase):
 
         payment = SubscriptionPayment.objects.get()
         self.assertEqual(payment.status, "pending")
-        self.assertEqual(payment.amount, PLAN_PRICES_UGX["growth"] * 3)
+        self.assertEqual(payment.amount, SUBSCRIPTION_PRICE_UGX)
         self.assertEqual(payment.transaction_id, response.data["reference"])
         # A prompt is not a payment.
         self.workspace.refresh_from_db()

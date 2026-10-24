@@ -89,6 +89,8 @@ export function Business({ id }: { id: string }) {
 
       <Decisions business={data} onSaved={saved} />
 
+      <Referrals block={data.referral} />
+
       <div className="mt-6 grid gap-4 lg:grid-cols-2">
         <Panel title="People">
           <ul className="divide-y divide-line/70">
@@ -330,6 +332,105 @@ function Decisions({
           Reset
         </Button>
       </div>
+    </Panel>
+  );
+}
+
+
+/** Who this business brought in, and who brought this business.
+ *
+ *  Both directions are shown. The outbound list says whether the invite
+ *  scheme is working for them; the inbound line is how you would notice one
+ *  account minting others to unlock itself — five sibling businesses that all
+ *  arrived the same afternoon and never sold anything is a pattern worth
+ *  seeing. */
+function Referrals({ block }: { block: BusinessDetail["referral"] }) {
+  const short = block.businesses.length === 0 && block.opens === 0 && !block.referred_by;
+  if (short && !block.code) {
+    return (
+      <Panel className="mt-6" title="Referrals">
+        <p className="py-4 text-sm text-dim">
+          This business has never opened its invite link.
+        </p>
+      </Panel>
+    );
+  }
+
+  return (
+    <Panel
+      className="mt-6"
+      title="Referrals"
+      action={
+        block.code ? (
+          <span className="font-mono text-xs text-dim">code {block.code}</span>
+        ) : undefined
+      }
+    >
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <Metric
+          label="Businesses referred"
+          value={count(block.signups)}
+          hint={`${block.needed} unlocks 3 days`}
+          accent={block.signups >= block.needed}
+        />
+        <Metric
+          label="Link opened by"
+          value={count(block.opens)}
+          hint={`${block.total_opens} times in total`}
+        />
+        <Metric
+          label="Free days claimed"
+          value={block.grace_granted_at ? "Yes" : "No"}
+          hint={block.grace_granted_at ? date(block.grace_granted_at) : "not yet"}
+        />
+        <Metric
+          label="Free days end"
+          value={block.grace_until ? date(block.grace_until) : "—"}
+          hint={block.grace_active ? "running now" : "not running"}
+          accent={block.grace_active}
+        />
+      </div>
+
+      {block.referred_by && (
+        <p className="mt-4 rounded-md border border-line/70 px-3 py-2 text-sm text-dim">
+          Brought in by{" "}
+          <Link
+            to={`/businesses/${block.referred_by.id}`}
+            className="font-medium text-info hover:underline"
+          >
+            {block.referred_by.name}
+          </Link>{" "}
+          on {date(block.referred_by.joined)}
+        </p>
+      )}
+
+      {block.businesses.length > 0 && (
+        <>
+          <p className="mb-1 mt-5 text-xs uppercase tracking-wide text-dim">
+            Businesses they referred
+          </p>
+          <ul className="divide-y divide-line/70">
+            {block.businesses.map((b) => (
+              <li key={b.id} className="flex items-center justify-between gap-2 py-2.5">
+                <div className="min-w-0">
+                  <Link
+                    to={`/businesses/${b.id}`}
+                    className="truncate text-sm font-medium hover:underline"
+                  >
+                    {b.name || "Unnamed business"}
+                  </Link>
+                  <p className="text-xs text-dim">joined {date(b.joined)}</p>
+                </div>
+                {b.subscribed ? (
+                  <Tag className="border-ok/40 text-ok">Paying</Tag>
+                ) : (
+                  <Tag className="border-line text-dim">Not paying</Tag>
+                )}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
     </Panel>
   );
 }

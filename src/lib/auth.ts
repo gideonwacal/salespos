@@ -62,6 +62,7 @@ export function businessFrom(workspace: api.ApiWorkspace): Partial<Business> {
     trial_ends: pick("trial_ends", ""),
     subscribed: pick("subscribed", false),
     paid_until: pick("paid_until", null),
+    referral_grace_until: pick("referral_grace_until", null),
     billing_enabled: pick("billing_enabled", true) as boolean,
     // The server owns this flag: someone who abandoned the wizard on sign-up
     // should land back in it when they sign in again, not on a blank dashboard.
@@ -115,6 +116,7 @@ export async function signUp(input: {
   phone?: string;
   industry?: string;
   whatsappNumber?: string;
+  referralCode?: string;
 }): Promise<SessionUser & { whatsapp?: WhatsAppLink }> {
   try {
     const data = await api.register(input);

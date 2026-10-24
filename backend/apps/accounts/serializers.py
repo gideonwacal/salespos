@@ -4,11 +4,12 @@ from django.db import transaction
 from rest_framework import serializers
 
 from apps.accounts.models import (
-    PLAN_PRICES_UGX,
     Membership,
     SubscriptionPayment,
     User,
+    SUBSCRIPTION_MONTHS,
     Workspace,
+    subscription_price,
 )
 
 
@@ -46,6 +47,7 @@ class WorkspaceSerializer(serializers.ModelSerializer):
             "trial_ends",
             "subscribed",
             "paid_until",
+            "referral_grace_until",
             "configured",
             "billing_enabled",
             "created_at",
@@ -61,6 +63,8 @@ class WorkspaceSerializer(serializers.ModelSerializer):
             "trial_ends",
             "subscribed",
             "paid_until",
+            # Earned by referring five businesses, never by editing a profile.
+            "referral_grace_until",
         ]
 
 
@@ -114,9 +118,15 @@ class SubscriptionPaymentSerializer(serializers.ModelSerializer):
         return value
 
     def create(self, validated_data):
-        validated_data["amount"] = (
-            PLAN_PRICES_UGX[validated_data["plan"]] * validated_data["months"]
-        )
+        """Price it here, ignoring whatever the browser named.
+
+        There is one subscription, so there is nothing to choose. Reading the
+        plan and months off the request let a client ask for "growth, 3
+        months" and be quoted 300,000 for what the page advertises at 25,000.
+        """
+        validated_data["plan"] = "standard"
+        validated_data["months"] = SUBSCRIPTION_MONTHS
+        validated_data["amount"] = subscription_price()
         return super().create(validated_data)
 
 
@@ -203,6 +213,13 @@ class RegisterSerializer(serializers.Serializer):
         max_length=40, required=False, allow_blank=True, default=""
     )
 
+    # The code from the invite link they arrived through, if any. An unknown
+    # or self-referring code is ignored rather than refused: a stranger's typo
+    # must not be the reason somebody cannot open a business.
+    referral_code = serializers.CharField(
+        max_length=12, required=False, allow_blank=True, default=""
+    )
+
     def validate_whatsapp_number(self, value):
         from apps.ai.models import normalise_phone
         from apps.ai.onboarding import conflicting_identity
@@ -257,6 +274,7 @@ class RegisterSerializer(serializers.Serializer):
             "user": user,
             "workspace": workspace,
             "whatsapp_number": validated_data.get("whatsapp_number", ""),
+            "referral_code": validated_data.get("referral_code", ""),
         }
 
 

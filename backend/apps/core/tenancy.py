@@ -110,7 +110,8 @@ def ensure_workspace_paid(workspace):
         return
     if workspace.locked:
         raise PermissionDenied(
-            "Your free trial has ended. Choose a package on the billing page to carry on."
+            "Your free trial has ended. Subscribe on the billing page to carry on, "
+            "or invite 5 businesses to unlock 3 more days."
         )
 
 

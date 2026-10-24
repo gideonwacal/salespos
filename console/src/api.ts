@@ -130,7 +130,9 @@ export type BusinessState =
   | "paying"
   | "expired"
   | "free"
-  | "suspended";
+  | "suspended"
+  /** Inside the three days five referrals bought. */
+  | "referral_grace";
 export type Access = "standard" | "free" | "suspended";
 export type PaymentStatus = "pending" | "approved" | "rejected";
 
@@ -169,6 +171,14 @@ export type Payment = {
 export type Overview = {
   businesses: number;
   states: Record<BusinessState, number>;
+  referrals: {
+    signups: number;
+    signups_30d: number;
+    link_opens: number;
+    /** Businesses that bought themselves three days this way. */
+    grace_granted: number;
+    referring_businesses: number;
+  };
   users: number;
   active_users_7d: number;
   signups_30d: number;
@@ -222,6 +232,27 @@ export type BusinessDetail = BusinessRow & {
   }[];
   payments: Payment[];
   activity: ActivityEntry[];
+  referral: ReferralBlock;
+};
+
+/** Who a business brought in, and who brought it.
+ *
+ *  Both directions are here on purpose. One says whether the invite scheme is
+ *  working for them; the other is how you would notice somebody minting
+ *  accounts to unlock their own. */
+export type ReferralBlock = {
+  code: string | null;
+  /** Distinct people who opened the link. */
+  opens: number;
+  /** Every open, same person twice included. */
+  total_opens: number;
+  signups: number;
+  needed: number;
+  grace_granted_at: string | null;
+  grace_until: string | null;
+  grace_active: boolean;
+  referred_by: { id: string; name: string; joined: string } | null;
+  businesses: { id: string; name: string; joined: string; subscribed: boolean }[];
 };
 
 export type UserRow = {

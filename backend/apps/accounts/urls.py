@@ -2,6 +2,7 @@ from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 from rest_framework_simplejwt.views import TokenRefreshView, TokenVerifyView
 
+from apps.accounts.referral_views import MyReferralsView, ReferralVisitView
 from apps.accounts.views import (
     BillingInfoView,
     LoginView,
@@ -35,6 +36,8 @@ urlpatterns = [
         ResendVerificationView.as_view(),
         name="resend-verification",
     ),
+    path("referrals/me/", MyReferralsView.as_view(), name="referrals-me"),
+    path("referrals/visit/", ReferralVisitView.as_view(), name="referrals-visit"),
     path("billing/", BillingInfoView.as_view(), name="billing"),
     path("billing/charge/", MobileMoneyChargeView.as_view(), name="billing-charge"),
     path(

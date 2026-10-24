@@ -24,7 +24,7 @@ import {
   Loader2,
   Smartphone,
 } from "lucide-react";
-import { planById, type PlanId } from "@/lib/demo";
+import { planById, SUBSCRIPTION_MONTHS, type PlanId } from "@/lib/demo";
 import {
   checkMobileMoneyCharge,
   startMobileMoneyCharge,
@@ -46,14 +46,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 
-const MONTHS = [1, 3, 6, 12];
-
-/** A longer commitment is the same price per month; say so rather than imply a discount. */
-const MONTH_NOTE: Record<number, string> = {
-  3: "one quarter",
-  6: "half a year",
-  12: "a full year",
-};
+// One subscription, one term. The picker is gone rather than left showing a
+// single option: a choice of one is a question nobody needs asked.
 
 /** How often to ask the telco, and for how long before we stop watching. */
 const POLL_MS = 4000;
@@ -84,7 +78,7 @@ export function PaymentDialog({
   onSubmitted: () => void;
 }) {
   const [step, setStep] = useState<"choose" | "send" | "confirm">("choose");
-  const [months, setMonths] = useState(1);
+  const months = SUBSCRIPTION_MONTHS;
   const [channelId, setChannelId] = useState<string | null>(null);
   const [phone, setPhone] = useState(defaultPhone);
   const [reference, setReference] = useState("");
@@ -103,7 +97,6 @@ export function PaymentDialog({
   useEffect(() => {
     if (!plan) return;
     setStep("choose");
-    setMonths(1);
     setPhone(defaultPhone);
     setReference("");
     setChannelId(null);
@@ -172,8 +165,9 @@ export function PaymentDialog({
   if (!plan) return null;
 
   const chosen = planById(plan);
-  const monthly = info?.prices[plan] ?? chosen.price_ugx;
-  const total = monthly * months;
+  // The server prices this itself and ignores anything the browser names, so
+  // quoting a figure derived here would be quoting a number nobody charges.
+  const total = info?.subscription?.price ?? chosen.price_ugx;
   const channel = channels.find((c) => c.id === channelId) ?? null;
   /** True when the telco can be asked to charge this number directly. */
   const collects = channel?.kind === "collect";
@@ -286,36 +280,14 @@ export function PaymentDialog({
           <NothingConfigured />
         ) : step === "choose" ? (
           <div className="space-y-4">
-            <div className="space-y-2">
-              <Label>How long</Label>
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                {MONTHS.map((m) => (
-                  <button
-                    key={m}
-                    type="button"
-                    onClick={() => setMonths(m)}
-                    className={cn(
-                      "rounded-lg border p-2 text-center transition-colors",
-                      months === m
-                        ? "border-primary bg-primary/10 font-semibold text-primary"
-                        : "border-border hover:border-primary/50",
-                    )}
-                  >
-                    <span className="block text-sm">
-                      {m} month{m === 1 ? "" : "s"}
-                    </span>
-                    <span className="block text-[11px] text-muted-foreground">
-                      {moneyIn(monthly * m, "UGX")}
-                    </span>
-                  </button>
-                ))}
-              </div>
-              {MONTH_NOTE[months] && (
-                <p className="text-[11px] text-muted-foreground">
-                  Paying for {MONTH_NOTE[months]} up front. The months are added on top of any
-                  time you have left.
-                </p>
-              )}
+            {/* What they are buying, stated rather than chosen. */}
+            <div className="rounded-lg border border-primary/40 bg-primary/5 p-3">
+              <p className="text-sm font-semibold">
+                {moneyIn(total, "UGX")} for {months} months
+              </p>
+              <p className="text-[11px] text-muted-foreground">
+                Added on top of any time you have left, not instead of it.
+              </p>
             </div>
 
             <div className="space-y-2">
