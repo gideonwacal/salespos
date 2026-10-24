@@ -260,3 +260,61 @@ class SignupAttributionTests(APITestCase):
             )
         self.referrer.refresh_from_db()
         self.assertTrue(self.referrer.on_referral_grace)
+
+
+@override_settings(BILLING_ENABLED=True)
+class PamojaFreeAccessTests(APITestCase):
+    """The platform owner's own business runs on the product without paying."""
+
+    def test_pamoja_never_locks_however_old_it_gets(self):
+        pamoja = a_business(
+            "Pamoja Traders",
+            access="free",
+            trial_ends=timezone.now() - timedelta(days=400),
+        )
+        self.assertFalse(pamoja.locked)
+        self.assertFalse(pamoja.subscribed)
+
+    def test_an_ordinary_business_of_the_same_age_does_lock(self):
+        """So the test above is proving free access, not a broken lock."""
+        other = a_business("Someone Else", trial_ends=timezone.now() - timedelta(days=400))
+        self.assertTrue(other.locked)
+
+    def test_free_access_outranks_an_exhausted_referral_grace(self):
+        pamoja = a_business(
+            "Pamoja Traders",
+            access="free",
+            trial_ends=timezone.now() - timedelta(days=400),
+            referral_grace_until=timezone.now() - timedelta(days=10),
+            referral_grace_granted_at=timezone.now() - timedelta(days=13),
+        )
+        self.assertFalse(pamoja.locked)
+
+    def test_the_migration_grants_it(self):
+        """Runs the data migration's own function against today's rows.
+
+        Imported by string because the module name starts with a digit, which
+        is not a legal identifier for a normal import.
+        """
+        from importlib import import_module
+
+        from django.apps import apps as django_apps
+
+        module = import_module("apps.accounts.migrations.0014_pamoja_stays_free")
+
+        pamoja = a_business("Pamoja Traders")
+        stranger = a_business("Totally Unrelated Ltd")
+        suspended = a_business("Pamoja Branch Two", access="suspended")
+
+        module.keep_pamoja_free(django_apps, None)
+
+        pamoja.refresh_from_db()
+        stranger.refresh_from_db()
+        suspended.refresh_from_db()
+
+        self.assertEqual(pamoja.access, "free")
+        self.assertFalse(pamoja.locked)
+        # Everyone else is untouched...
+        self.assertEqual(stranger.access, "standard")
+        # ...and a deliberate suspension is not quietly undone.
+        self.assertEqual(suspended.access, "suspended")
