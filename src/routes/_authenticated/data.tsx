@@ -19,13 +19,17 @@ import {
   mapRows,
   readTable,
   stamp,
+  starterWorkbook,
   templateCsv,
+  templateWorkbook,
+  downloadWorkbook,
   toCsv,
   withinPeriod,
   type RowResult,
   type TransferSchema,
 } from "@/lib/transfer";
 import { useIndustry } from "@/hooks/useIndustry";
+import { useBusiness } from "@/hooks/useBusiness";
 import { useAuth } from "@/hooks/useAuth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -77,6 +81,7 @@ type Stage =
 
 function DataTransfer() {
   const industry = useIndustry();
+  const business = useBusiness();
   const { isOwner } = useAuth();
   const queryClient = useQueryClient();
   const datasets = useMemo(() => datasetsFor(industry), [industry]);
@@ -135,9 +140,47 @@ function DataTransfer() {
     }
   };
 
+  /**
+   * Two extra example rows per list, so the shape is obvious from the file.
+   *
+   * One example row leaves a shopkeeper guessing whether the second line is
+   * meant to look the same; three make the pattern plain. The selling-sizes
+   * sheet especially, where the whole point is that a quarter is not priced
+   * at a quarter.
+   */
+  const examplesFor = (schema: TransferSchema): string[][] => {
+    const base = schema.columns.map((c) => c.example ?? "");
+    if (schema.id !== "product_units") return [base];
+    return [
+      ["Sugar", "1/4 kg", "0.25", "1200"],
+      ["Sugar", "1/2 kg", "0.5", "2100"],
+      ["Sugar", "1 kg", "1", "4000"],
+      ["Sugar", "50kg sack", "50", "190000"],
+    ];
+  };
+
   const exportTemplate = () => {
+    downloadWorkbook(
+      stamp(`${active.id}-template`, "xlsx"),
+      templateWorkbook(active, business.name || "Your business", examplesFor(active)),
+    );
+    toast.success("Template downloaded — fill it in and upload it back");
+  };
+
+  /** Every list a new shop has to fill, in one workbook. */
+  const exportStarterPack = () => {
+    const wanted = datasets.filter((d) => !EXPORT_ONLY.has(d.id));
+    downloadWorkbook(
+      stamp("salespos-starter-pack", "xlsx"),
+      starterWorkbook(wanted, business.name || "Your business", examplesFor),
+    );
+    toast.success(`Starter pack downloaded — ${wanted.length} sheets to fill in`);
+  };
+
+  /** The old one-sheet CSV, for anyone whose spreadsheet app dislikes .xlsx. */
+  const exportTemplateCsv = () => {
     download(stamp(`${active.id}-template`), templateCsv(active));
-    toast.success("Template downloaded — fill it in and import it back");
+    toast.success("Template downloaded as CSV");
   };
 
   /* ---------------- import ---------------- */
@@ -183,6 +226,13 @@ function DataTransfer() {
     let saved = 0;
     const failures: string[] = [];
 
+    // Selling sizes name their item in the sheet; the lookup is fetched once
+    // here rather than per row.
+    const products =
+      active.id === "product_units"
+        ? await selectRows<{ id: string; name: string }>("products")
+        : [];
+
     for (const row of good) {
       try {
         // Staff go through addStaff so they get a real login and the seat
@@ -195,6 +245,17 @@ function DataTransfer() {
             phone: String(row.value.phone ?? ""),
             role: row.value.role === "owner" ? "owner" : "manager",
           });
+        } else if (active.id === "product_units") {
+          // The sheet names the item; the database wants its id. Resolved
+          // here rather than making a shopkeeper paste UUIDs into Excel.
+          const payload = { ...(row.value as Record<string, unknown>) };
+          const wanted = String(payload.product_name ?? "").trim().toLowerCase();
+          delete payload.product_name;
+          const match = products.find((p) => p.name.trim().toLowerCase() === wanted);
+          if (!match) {
+            throw new Error(`No item called “${row.value.product_name}” — add it first`);
+          }
+          await insertRows(active.table, { ...payload, product: match.id });
         } else {
           await insertRows(active.table, row.value as Record<string, unknown>);
         }
@@ -223,12 +284,19 @@ function DataTransfer() {
 
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="text-2xl font-extrabold">Import &amp; export</h1>
-        <p className="text-sm text-muted-foreground">
-          Bring an existing spreadsheet in, or take any list out to Excel. Accepts .xlsx, .xls
-          and .csv.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-extrabold">Import &amp; export</h1>
+          <p className="text-sm text-muted-foreground">
+            Bring an existing spreadsheet in, or take any list out to Excel. Accepts .xlsx, .xls
+            and .csv.
+          </p>
+        </div>
+        {/* A shop setting up has several lists to enter and no reason to find
+            them one at a time. */}
+        <Button variant="outline" onClick={exportStarterPack}>
+          <FileSpreadsheet className="size-4" /> Starter pack
+        </Button>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[260px_1fr]">
@@ -351,6 +419,11 @@ function DataTransfer() {
                 {importable && (
                   <Button variant="outline" onClick={exportTemplate}>
                     <FileSpreadsheet className="size-4" /> Download template
+                  </Button>
+                )}
+                {importable && (
+                  <Button variant="ghost" onClick={exportTemplateCsv} className="text-xs">
+                    or as CSV
                   </Button>
                 )}
                 {mayImport && (

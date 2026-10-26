@@ -339,6 +339,70 @@ const SALES: TransferSchema = {
   ],
 };
 
+/**
+ * The sizes a product is broken into, and what each one sells for.
+ *
+ * Worth bulk-loading rather than clicking: a shop that sells sugar, rice,
+ * flour and beans by the quarter, half and kilo is forty units typed by hand
+ * before it has sold anything.
+ *
+ * The price is per size and not a share of the whole, which is the one thing
+ * that has to be understood before this sheet is filled in — a quarter at a
+ * quarter of the kilo price gives the premium away.
+ */
+const PRODUCT_UNITS: TransferSchema = {
+  id: "product_units",
+  label: "Selling sizes",
+  table: "product_units",
+  description:
+    "Quarters, halves, sacks and crates — each with its own price. Only for items sold in parts.",
+  columns: [
+    {
+      key: "product_name",
+      label: "Item",
+      kind: "text",
+      required: true,
+      aliases: ["product", "product name", "item name", "name"],
+      example: "Sugar",
+    },
+    {
+      key: "name",
+      label: "Size",
+      kind: "text",
+      required: true,
+      aliases: ["unit", "unit name", "size name", "measure"],
+      example: "1/4 kg",
+    },
+    {
+      key: "factor",
+      label: "How many base units",
+      kind: "number",
+      required: true,
+      aliases: ["factor", "quantity", "base units", "equals", "conversion"],
+      example: "0.25",
+    },
+    {
+      key: "price",
+      label: "Sells for",
+      kind: "money",
+      required: true,
+      aliases: ["price", "selling price", "retail price", "amount"],
+      example: "1200",
+    },
+  ],
+  validateRow(row) {
+    const factor = Number(row.factor ?? 0);
+    if (!Number.isFinite(factor) || factor <= 0) {
+      return "How many base units is this size? It has to be more than zero.";
+    }
+    const price = Number(row.price ?? 0);
+    if (!Number.isFinite(price) || price <= 0) {
+      return "Enter what this size sells for.";
+    }
+    return null;
+  },
+};
+
 function products(industry: IndustryProfile): TransferSchema {
   const columns: TransferSchema["columns"] = [
     {
@@ -508,7 +572,17 @@ function products(industry: IndustryProfile): TransferSchema {
 
 /** Everything this business can move in and out, in menu order. */
 export function datasetsFor(industry: IndustryProfile): TransferSchema[] {
-  return [products(industry), STOCK_MOVEMENTS, STAFF, CUSTOMERS, DEBTS, SUPPLIERS, EXPENSES, SALES];
+  return [
+    products(industry),
+    PRODUCT_UNITS,
+    STOCK_MOVEMENTS,
+    STAFF,
+    CUSTOMERS,
+    DEBTS,
+    SUPPLIERS,
+    EXPENSES,
+    SALES,
+  ];
 }
 
 /** Datasets that only make sense to export. */

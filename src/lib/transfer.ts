@@ -272,6 +272,161 @@ export function templateCsv(schema: TransferSchema): string {
   return [header, example].join("\r\n");
 }
 
+/** Plain words for what a column will accept. */
+function kindHint(kind: ColumnKind): string {
+  switch (kind) {
+    case "money":
+      return "A number. No commas, no UGX — just 4200.";
+    case "integer":
+      return "A whole number.";
+    case "number":
+      return "A number. Parts are fine: 0.25.";
+    case "date":
+      return "A date, like 2026-03-14.";
+    case "boolean":
+      return "yes or no.";
+    default:
+      return "Text.";
+  }
+}
+
+/**
+ * The guide sheet that rides along with every template.
+ *
+ * A bare header row is only obvious to whoever wrote it. The questions a shop
+ * actually has — is this one required, does the price go in with commas, what
+ * happens to a row I get wrong — are answered here rather than in a reply to
+ * a support message.
+ */
+function guideSheet(schema: TransferSchema, businessName: string): string[][] {
+  const rows: string[][] = [
+    [`${schema.label} — import template`],
+    [businessName],
+    [],
+    [schema.description],
+    [],
+    ["How to use this file"],
+    ["1.", `Open the “${schema.label}” sheet.`],
+    ["2.", "Replace the example rows with your own. Keep the headings as they are."],
+    ["3.", "Save the file, then upload it on Import & Export."],
+    [],
+    ["You will see a preview before anything is saved. Rows with a problem are"],
+    ["listed with the reason, and the rest still go in — nothing is all-or-nothing."],
+    [],
+    ["Columns"],
+    ["Heading", "Needed?", "What goes in it", "Example"],
+  ];
+  for (const column of schema.columns) {
+    rows.push([
+      column.label,
+      column.required ? "Required" : "Optional",
+      kindHint(column.kind),
+      column.example ?? "",
+    ]);
+  }
+  rows.push([]);
+  rows.push(["Headings we also recognise, so an existing sheet often imports as it is:"]);
+  for (const column of schema.columns) {
+    if (column.aliases?.length) {
+      rows.push([column.label, column.aliases.join(", ")]);
+    }
+  }
+  return rows;
+}
+
+/** The example rows, as a grid. */
+function exampleGrid(schema: TransferSchema, examples: string[][] = []): string[][] {
+  const header = schema.columns.map((c) => c.label);
+  const fallback = [schema.columns.map((c) => c.example ?? "")];
+  return [header, ...(examples.length ? examples : fallback)];
+}
+
+function autoWidths(rows: string[][]) {
+  const widths: number[] = [];
+  for (const row of rows) {
+    row.forEach((cell, i) => {
+      widths[i] = Math.min(60, Math.max(widths[i] ?? 10, String(cell ?? "").length + 2));
+    });
+  }
+  return widths.map((wch) => ({ wch }));
+}
+
+function addSheet(book: XLSX.WorkBook, name: string, rows: string[][]) {
+  const sheet = XLSX.utils.aoa_to_sheet(rows);
+  sheet["!cols"] = autoWidths(rows);
+  // Excel refuses sheet names over 31 characters and a handful of symbols.
+  XLSX.utils.book_append_sheet(book, sheet, name.replace(/[\\/?*[\]:]/g, "").slice(0, 31));
+}
+
+/**
+ * One dataset as a workbook: a guide sheet, then the sheet to fill in.
+ *
+ * Returned as bytes rather than written straight out, so the caller decides
+ * the filename and the download behaves like every other one on the page.
+ */
+export function templateWorkbook(
+  schema: TransferSchema,
+  businessName: string,
+  examples: string[][] = [],
+): ArrayBuffer {
+  const book = XLSX.utils.book_new();
+  addSheet(book, "How to fill this in", guideSheet(schema, businessName));
+  addSheet(book, schema.label, exampleGrid(schema, examples));
+  return XLSX.write(book, { bookType: "xlsx", type: "array" }) as ArrayBuffer;
+}
+
+/**
+ * Everything a new shop needs, in one file.
+ *
+ * Separate downloads meant filling four spreadsheets and remembering which
+ * went where. One workbook with a sheet each, in the order they have to be
+ * imported, is the same work without the bookkeeping.
+ */
+export function starterWorkbook(
+  schemas: TransferSchema[],
+  businessName: string,
+  examplesFor: (schema: TransferSchema) => string[][] = () => [],
+): ArrayBuffer {
+  const book = XLSX.utils.book_new();
+  const intro: string[][] = [
+    ["SalesPos starter pack"],
+    [businessName],
+    [],
+    ["One sheet per list. Fill in what you have — a sheet you leave empty is skipped."],
+    [],
+    ["Import them in this order, because the later ones refer to the earlier:"],
+    [],
+    ["Order", "Sheet", "What it is"],
+  ];
+  schemas.forEach((schema, i) => {
+    intro.push([String(i + 1), schema.label, schema.description]);
+  });
+  intro.push([]);
+  intro.push(["Upload each sheet on Import & Export, one at a time, picking the"]);
+  intro.push(["matching list before you upload."]);
+  addSheet(book, "Start here", intro);
+
+  for (const schema of schemas) {
+    addSheet(book, schema.label, exampleGrid(schema, examplesFor(schema)));
+  }
+  return XLSX.write(book, { bookType: "xlsx", type: "array" }) as ArrayBuffer;
+}
+
+/** Hand the browser a workbook. */
+export function downloadWorkbook(filename: string, bytes: ArrayBuffer) {
+  const blob = new Blob([bytes], {
+    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
 /** Hand the browser a file. Kept here so every caller behaves the same. */
 export function download(filename: string, content: string, type = "text/csv;charset=utf-8") {
   // The BOM makes Excel open UTF-8 CSVs without mangling accented names.
