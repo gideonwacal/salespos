@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 
 from django.utils import timezone
 from rest_framework import status, viewsets
@@ -51,6 +52,18 @@ UNKNOWN_NUMBER = (
 )
 
 NOT_TEXT = "I can only read text messages at the moment — please type your question."
+
+
+def code_present(text: str, code: str) -> bool:
+    """Is this pairing code in this message?
+
+    Bounded on both sides so a code is not matched inside a longer run of
+    digits — "1481920" is not 481920, and treating it as one would verify a
+    handset on a number that was never sent.
+    """
+    if not code:
+        return False
+    return re.search(rf"(?<!\d){re.escape(code)}(?!\d)", text or "") is not None
 
 
 class ChatView(APIView):
@@ -251,7 +264,11 @@ class WhatsAppWebhookView(APIView):
         # An unverified link is finished by sending the code from the handset,
         # which is what proves the person holds the number.
         if not identity.verified:
-            if (message.get("text") or "").strip() == identity.pairing_code:
+            # The code is looked for *inside* the message, not matched against
+            # the whole of it: the wa.me link pre-fills a sentence around it,
+            # and a shop that types "code 481920" means the same thing as one
+            # that types the six digits alone.
+            if code_present(message.get("text") or "", identity.pairing_code):
                 identity.verified_at = timezone.now()
                 identity.pairing_code = ""
                 identity.save(update_fields=["verified_at", "pairing_code"])

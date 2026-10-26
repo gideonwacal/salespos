@@ -72,7 +72,8 @@ WHATSAPP_TOKEN=...               # permanent token from a System User
 WHATSAPP_PHONE_NUMBER_ID=...     # on the API Setup page
 WHATSAPP_VERIFY_TOKEN=...        # you invent this; type it into Meta too
 WHATSAPP_APP_SECRET=...          # App Settings → Basic → App Secret
-WHATSAPP_WELCOME_TEMPLATE=       # the greeting sent at sign-up (see below)
+WHATSAPP_BUSINESS_NUMBER=        # the dialable number, e.g. 256760417357
+WHATSAPP_WELCOME_TEMPLATE=       # optional nudge for owners who never tap
 WHATSAPP_TEMPLATE_LANGUAGE=en
 WHATSAPP_REMINDER_TEMPLATE=      # only needed to send customer reminders
 
@@ -129,11 +130,33 @@ They reply `481920` from that handset and get
 
 From then on they just ask questions.
 
-**The first message has to be a template.** Meta only allows free text inside a
-24-hour window that the *customer* opens by messaging first, and a shop that
-signed up ten seconds ago has never messaged us. So `WHATSAPP_WELCOME_TEMPLATE`
-names a template you had approved in advance; their reply opens the window, and
-everything after it is ordinary text.
+**Why a tap and not a message.** Meta only allows free text inside a 24-hour
+window that the *customer* opens by messaging first. A shop that signed up ten
+seconds ago has never messaged us, so there are only two ways through, and they
+are not equally good:
+
+| | Owner taps a link | We message them cold |
+|---|---|---|
+| Needs an approved template | no | **yes** |
+| Works today | **yes** | after approval |
+| Cost | free (service conversation) | billed per message |
+| Fails visibly | **yes** | no — fails at Meta's end |
+| Proves they hold the handset | **yes** | no |
+
+The tap wins on every row, which is why it is the default. `WHATSAPP_BUSINESS_NUMBER`
+is all it needs — the dialable number in full international form, digits only:
+
+```
+WHATSAPP_BUSINESS_NUMBER=256760417357
+```
+
+Sign-up then returns `whatsapp.activation_link`, a `wa.me` URL with the pairing
+code already typed, and the app shows it as an **Open WhatsApp** button. They
+press send; the webhook sees the code, verifies the link, and replies with the
+real welcome. Nothing had to be approved first.
+
+The cold template is kept as a nudge for owners who never tap, and only for
+that. Leave `WHATSAPP_WELCOME_TEMPLATE` unset and everything above still works.
 
 Create it at business.facebook.com → WhatsApp Manager → Message templates,
 category **Utility**, with two body placeholders in this order:

@@ -1,21 +1,27 @@
 """Linking a business's WhatsApp number at sign-up.
 
-The owner types their WhatsApp business number on the sign-up form, and a
-welcome lands on that handset straight away. Replying with the code in it
-finishes the link, and from then on they can simply ask the assistant
-questions.
+There are two ways to get a new owner talking to their assistant, and they are
+not equally good.
 
-Two constraints shape this, and both come from outside:
+**The easy one, and the default.** Sign-up hands them a wa.me link with the
+pairing code already typed. They tap it, WhatsApp opens, they press send. That
+one tap does three things at once: it proves they hold the handset, it opens
+Meta's 24-hour window so everything after it can be ordinary text, and it costs
+nothing — a conversation the customer starts is a service conversation, and the
+first thousand a month per number are free. Nothing has to be approved first.
 
-Meta will not deliver free text to someone who has not messaged the business in
-the last 24 hours. A brand-new shop has never messaged us, so the first touch
-has to be a template approved in advance. Once they reply, the window opens and
-everything after it is ordinary text.
+**The hard one, kept as a fallback.** Messaging them cold. Meta will not
+deliver free text to somebody who has not written to the business in the last
+24 hours, so this needs a template submitted and approved in advance, it is
+billed per message, and when the template is not approved yet it fails quietly
+at Meta's end while the shop watches a phone that never buzzes.
 
-A number typed at sign-up is a claim, not proof. Until somebody replies from
-that handset the link stays unverified and the assistant answers nothing
-through it — because a mistyped digit would otherwise put one shop's takings on
-a stranger's phone.
+So the link is the path to take. The template is only worth configuring to
+chase the owners who never tapped it.
+
+Either way the link stays unverified until something arrives *from* that
+handset. A number typed at sign-up is a claim, not proof, and a mistyped digit
+would otherwise put one shop's takings on a stranger's phone.
 """
 
 from __future__ import annotations
@@ -37,6 +43,26 @@ WELCOME = (
     "• _Who owes me money?_\n"
     "• _How much profit did I make this month?_"
 )
+
+
+def activation_link(identity) -> str:
+    """A wa.me link that opens WhatsApp with the pairing code already typed.
+
+    Returns "" when no business number is configured, so a caller can tell the
+    difference between "tap here" and "there is nothing to tap".
+    """
+    from urllib.parse import quote
+
+    number = settings.WHATSAPP_BUSINESS_NUMBER
+    if not number or not identity or not identity.pairing_code:
+        return ""
+    # The code is what the webhook looks for; the words around it are for the
+    # person, so the thread does not open with a bare six digits.
+    message = (
+        f"Hi SalesPos — activate my assistant for "
+        f"{identity.workspace.name}. Code: {identity.pairing_code}"
+    )
+    return f"https://wa.me/{number}?text={quote(message)}"
 
 
 def conflicting_identity(phone: str, *, exclude_workspace=None):
@@ -79,6 +105,8 @@ def start_link(*, user, workspace, phone: str) -> tuple[WhatsAppIdentity | None,
         log.exception("Could not create a WhatsApp link for workspace %s", workspace.id)
         return None, False
 
+    # The template is tried only as a nudge for owners who never tap the link.
+    # It is allowed to fail: the link is the path that actually works.
     sent = send_welcome(identity)
     return identity, sent
 

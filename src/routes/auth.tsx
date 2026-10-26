@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { toast } from "sonner";
-import { Store, PlayCircle } from "lucide-react";
+import { MessageCircle, Store, PlayCircle } from "lucide-react";
 import { startDemo, getBusiness } from "@/lib/demo";
 import { DEMO_TRADES } from "@/lib/demoTrades";
 import { signIn as authSignIn, signUp as authSignUp } from "@/lib/auth";
@@ -25,6 +25,13 @@ import {
 import { INDUSTRY_GROUPS, resolveIndustry } from "@/lib/industry";
 import { clearReferral, takeReferral } from "@/routes/r.$code";
 import { PasswordInput } from "@/components/PasswordInput";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import type { WhatsAppLink } from "@/lib/auth";
 import heroImage from "@/assets/market-hero.jpg";
 
 export const Route = createFileRoute("/auth")({
@@ -51,6 +58,9 @@ function AuthPage() {
   const navigate = useNavigate();
   const { refresh } = useAuth();
   const [busy, setBusy] = useState(false);
+  // Held after sign-up so the owner is offered the WhatsApp tap while
+  // they are still here, rather than in a toast that disappears.
+  const [activate, setActivate] = useState<WhatsAppLink | null>(null);
   const [signIn, setSignIn] = useState({ email: "", password: "" });
   const [signUp, setSignUp] = useState({
     business: "",
@@ -112,20 +122,21 @@ function AuthPage() {
       clearReferral();
 
       toast.success("Workspace created — let's set up your business");
+      refresh();
 
-      // The greeting is a WhatsApp template, and Meta drops it silently if the
-      // template is not approved yet. Telling them which happened beats
-      // leaving them watching a phone that will never buzz.
-      if (created.whatsapp) {
-        const { welcome_sent, pairing_code } = created.whatsapp;
+      // One tap from here starts the conversation from their own handset,
+      // which is what Meta needs before the assistant may write to them at
+      // all. Held in front of them rather than announced in a toast.
+      if (created.whatsapp?.activation_link) {
+        setActivate(created.whatsapp);
+        return;
+      }
+      if (created.whatsapp && !created.whatsapp.welcome_sent) {
         toast.success(
-          welcome_sent
-            ? "Check WhatsApp — we've sent a welcome message to finish linking your number"
-            : `Reply ${pairing_code} from your WhatsApp business number to link it`,
+          `Send ${created.whatsapp.pairing_code} to the SalesPos WhatsApp number to link it`,
           { duration: 12000 },
         );
       }
-      refresh();
       navigate({ to: "/setup", replace: true });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not create the account");
@@ -144,7 +155,52 @@ function AuthPage() {
     window.location.href = "/pos";
   };
 
+  /** Sent on, with or without the WhatsApp step done. */
+  const onwards = () => {
+    setActivate(null);
+    navigate({ to: "/setup", replace: true });
+  };
+
   return (
+    <>
+    {activate && (
+      <Dialog open onOpenChange={(open) => !open && onwards()}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <MessageCircle className="size-5 text-success" />
+              Turn on your WhatsApp assistant
+            </DialogTitle>
+          </DialogHeader>
+
+          <p className="text-sm text-muted-foreground">
+            Tap below and WhatsApp opens with a short message already typed.
+            Send it, and you can ask about your shop any time — "How much did I
+            sell today?", "Who owes me money?"
+          </p>
+
+          <Button asChild className="w-full bg-success hover:bg-success/90">
+            {/* A plain link, not a fetch: the point is that the message is
+                sent by them, from their own handset. That is what opens
+                Meta's 24-hour window and proves the number is theirs. */}
+            <a href={activate.activation_link} target="_blank" rel="noopener noreferrer">
+              <MessageCircle className="mr-2 size-4" />
+              Open WhatsApp
+            </a>
+          </Button>
+
+          <p className="text-center text-xs text-muted-foreground">
+            Or send{" "}
+            <span className="font-mono font-semibold">{activate.pairing_code}</span>{" "}
+            to our WhatsApp number yourself.
+          </p>
+
+          <Button variant="ghost" onClick={onwards} className="w-full">
+            I'll do this later
+          </Button>
+        </DialogContent>
+      </Dialog>
+    )}
     <div className="grid min-h-screen lg:grid-cols-2">
       <div className="relative flex min-h-[320px] flex-col justify-between overflow-hidden bg-sidebar p-8 text-sidebar-foreground lg:min-h-screen lg:p-10">
         <img
@@ -355,5 +411,6 @@ function AuthPage() {
         </Card>
       </div>
     </div>
+    </>
   );
 }

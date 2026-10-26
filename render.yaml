@@ -168,6 +168,13 @@ services:
       # Must be an approved template: Meta will not deliver free text to
       # someone who has not messaged the business first. Two placeholders, in
       # order - the business name, then the pairing code.
+      # The number shops message, dialable and digits only: 256760417357.
+      # Not the same as WHATSAPP_PHONE_NUMBER_ID, which cannot be dialled.
+      # With this set, sign-up offers a one-tap WhatsApp link and no message
+      # template is needed at all.
+      - key: WHATSAPP_BUSINESS_NUMBER
+        sync: false
+      # Optional nudge for owners who never tap the link. Needs Meta approval.
       - key: WHATSAPP_WELCOME_TEMPLATE
         sync: false
       - key: WHATSAPP_TEMPLATE_LANGUAGE

@@ -30,6 +30,19 @@ from apps.accounts import momo, referrals, verification
 from apps.ai import onboarding
 
 logger = logging.getLogger(__name__)
+
+
+def referral_safe_link(identity):
+    """The activation link, never allowed to break a sign-up.
+
+    Building it only formats a string, but it reads settings and the related
+    workspace, and a 500 here would cost somebody their account over a button.
+    """
+    try:
+        return onboarding.activation_link(identity)
+    except Exception:  # noqa: BLE001
+        logger.exception("Could not build a WhatsApp activation link")
+        return ""
 from apps.accounts.serializers import (
     InviteMemberSerializer,
     MembershipSerializer,
@@ -104,10 +117,16 @@ class RegisterView(APIView):
                 "whatsapp": (
                     {
                         "number": identity.phone,
-                        # Returned so the app can show the code if the message
-                        # itself never arrived: an unapproved template fails at
-                        # Meta's end and the shop would otherwise just wait.
+                        # The code, so the app can show it whatever happens.
                         "pairing_code": identity.pairing_code,
+                        # The tap that actually works: WhatsApp opens with the
+                        # code already typed, and sending it opens Meta's
+                        # 24-hour window. Empty when no business number is
+                        # configured, which is how the app knows not to offer
+                        # a button that goes nowhere.
+                        "activation_link": referral_safe_link(identity),
+                        # Whether the cold template went out. A nudge, not the
+                        # path: it needs an approved template and is billed.
                         "welcome_sent": welcomed,
                     }
                     if identity is not None

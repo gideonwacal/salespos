@@ -416,4 +416,17 @@ WHATSAPP_REMINDER_TEMPLATE = os.environ.get("WHATSAPP_REMINDER_TEMPLATE", "").st
 # Message templates. Unset simply means no welcome is sent; sign-up is never
 # held up by it.
 WHATSAPP_WELCOME_TEMPLATE = os.environ.get("WHATSAPP_WELCOME_TEMPLATE", "").strip()
+
+# The number a shop actually messages, in full international form and digits
+# only: 256760417357. Not the same thing as WHATSAPP_PHONE_NUMBER_ID, which is
+# Meta's internal id for it and cannot be dialled.
+#
+# This is what makes the easy path possible. With it set, sign-up hands the new
+# owner a wa.me link instead of trying to message them cold: they tap, WhatsApp
+# opens with the code already typed, and sending it opens Meta's 24-hour
+# window. No template, no approval, and the message arrives from their handset,
+# which is the proof the pairing code was invented to get.
+WHATSAPP_BUSINESS_NUMBER = "".join(
+    ch for ch in os.environ.get("WHATSAPP_BUSINESS_NUMBER", "") if ch.isdigit()
+)
 WHATSAPP_TEMPLATE_LANGUAGE = os.environ.get("WHATSAPP_TEMPLATE_LANGUAGE", "en").strip()

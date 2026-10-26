@@ -27,8 +27,13 @@ import {
 export type WhatsAppLink = {
   number: string;
   pairing_code: string;
-  /** False when Meta would not deliver the greeting, usually because no
-   *  message template is approved yet. The code is shown instead. */
+  /** A wa.me link that opens WhatsApp with the code already typed. This is
+   *  the path that works: tapping it starts the conversation from the owner's
+   *  own handset, which needs no approved template and opens Meta's 24-hour
+   *  window. Empty when the server has no business number configured. */
+  activation_link: string;
+  /** Whether the cold template went out. A nudge for owners who never tap,
+   *  not the way this is meant to happen. */
   welcome_sent: boolean;
 };
 
