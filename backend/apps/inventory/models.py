@@ -20,15 +20,24 @@ class Product(WorkspaceScoped):
     wholesale_price = models.DecimalField(
         max_digits=14, decimal_places=2, null=True, blank=True
     )
-    stock_quantity = models.IntegerField(default=0)
-    reorder_level = models.IntegerField(default=10)
+    # Held in whole and part units of `unit_of_measure`: a shop that buys a
+    # 50kg sack and sells quarters is carrying 48.25 kg after three of them,
+    # and an integer here made that unsayable.
+    #
+    # Three decimal places, which covers a quarter, an eighth and a gram, and
+    # stops short of pretending to a precision no counter scale has.
+    stock_quantity = models.DecimalField(max_digits=14, decimal_places=3, default=0)
+    reorder_level = models.DecimalField(max_digits=14, decimal_places=3, default=10)
     expiry_date = models.DateField(null=True, blank=True)
 
     # Industry-specific columns. Each one is optional and only surfaced by the
     # industry profile that needs it, so a pharmacy never sees bottle deposits
     # and a hardware store never sees an expiry date.
     barcode = models.CharField(max_length=64, blank=True, default="")       # supermarket
-    unit_of_measure = models.CharField(max_length=32, blank=True, default="")  # hardware
+    # What one of `stock_quantity` is: "kg", "litre", "bottle", "sachet",
+    # "piece". The base unit everything else is measured against. Blank means
+    # the item is simply counted, which is the old behaviour.
+    unit_of_measure = models.CharField(max_length=32, blank=True, default="")
     batch_number = models.CharField(max_length=64, blank=True, default="")  # pharmacy
     prescription_only = models.BooleanField(default=False)                  # pharmacy
 
@@ -78,6 +87,74 @@ class Product(WorkspaceScoped):
     @property
     def low_stock(self) -> bool:
         return self.stock_quantity <= self.reorder_level
+
+
+class ProductUnit(WorkspaceScoped):
+    """A way this product can be sold, and what that way costs.
+
+    A shop buys a 50kg sack of sugar and sells it as kilos, halves and
+    quarters. Those are not the same price per kilo: breaking bulk earns a
+    premium, and a quarter that sells for 1,200 when the kilo is 4,000 is
+    normal rather than a mistake. So a unit carries its own price instead of
+    being a fraction of one.
+
+    Computing the price as `kilo price x factor` would have the till charge
+    1,000 for that quarter — quietly, correctly-looking, and 200 short every
+    single time.
+
+    `factor` is how many of the product's base unit this is:
+
+        1 kg          factor 1      of a product measured in kg
+        1/2 kg        factor 0.5
+        1/4 kg        factor 0.25
+        50kg sack     factor 50
+        Crate of 24   factor 24     of a product measured in bottles
+
+    A product with no units behaves exactly as it always did: one implicit
+    unit, factor 1, at `unit_selling_price`. Nothing has to be configured for
+    a shop that only ever sells whole things.
+    """
+
+    product = models.ForeignKey(
+        "inventory.Product", on_delete=models.CASCADE, related_name="units"
+    )
+    # What the counter calls it: "1/4 kg", "Half kg", "Crate of 24".
+    name = models.CharField(max_length=40)
+    factor = models.DecimalField(max_digits=12, decimal_places=4)
+    price = models.DecimalField(max_digits=14, decimal_places=2)
+    # Optional: what this unit goes for to a trade buyer.
+    wholesale_price = models.DecimalField(
+        max_digits=14, decimal_places=2, null=True, blank=True
+    )
+    # The one the till offers first. Enforced to a single unit per product in
+    # save(), because two defaults is the same as none.
+    is_default = models.BooleanField(default=False)
+    # Smallest first reads best on a till: quarter, half, kilo, sack.
+    sort_order = models.PositiveSmallIntegerField(default=0)
+
+    class Meta:
+        db_table = "product_units"
+        ordering = ["sort_order", "factor"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["product", "name"], name="uniq_product_unit_name"
+            ),
+            # A unit of zero or negative size would divide the shelf by zero
+            # or hand stock back on a sale.
+            models.CheckConstraint(check=models.Q(factor__gt=0), name="unit_factor_positive"),
+        ]
+        indexes = [models.Index(fields=["workspace", "product"])]
+
+    def __str__(self):
+        return f"{self.name} ({self.factor} x {self.product_id})"
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        if self.is_default:
+            # Exactly one default per product.
+            ProductUnit.objects.filter(product_id=self.product_id).exclude(
+                pk=self.pk
+            ).update(is_default=False)
 
 
 class VehicleFit(WorkspaceScoped):
@@ -143,7 +220,15 @@ class StockTransaction(WorkspaceScoped):
         Product, on_delete=models.CASCADE, related_name="stock_transactions"
     )
     type = models.CharField(max_length=20, choices=TYPE_CHOICES)
-    quantity = models.IntegerField()
+    # In base units, always. A delivery of two 50kg sacks is filed as 100,
+    # with the sack recorded below so the ledger still reads the way the
+    # delivery note did.
+    quantity = models.DecimalField(max_digits=14, decimal_places=3)
+    # How it was counted when it moved. Snapshotted rather than linked: a
+    # shop that retires the "50kg sack" unit must not rewrite what last
+    # month's deliveries said.
+    unit_name = models.CharField(max_length=40, blank=True, default="")
+    unit_factor = models.DecimalField(max_digits=12, decimal_places=4, default=1)
     notes = models.TextField(blank=True, default="")
     expiry_date = models.DateField(null=True, blank=True)
     performed_by = models.ForeignKey(
@@ -169,7 +254,7 @@ class DamageReport(WorkspaceScoped):
     product = models.ForeignKey(
         Product, on_delete=models.CASCADE, related_name="damage_reports"
     )
-    quantity = models.IntegerField(default=1)
+    quantity = models.DecimalField(max_digits=14, decimal_places=3, default=1)
     reason = models.TextField(blank=True, default="")
     photo_url = models.TextField(null=True, blank=True)
     reported_by = models.ForeignKey(

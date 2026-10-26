@@ -5,10 +5,17 @@ from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 
 from apps.core.tenancy import WorkspaceViewSet
-from apps.inventory.models import DamageReport, Product, StockTransaction, VehicleFit
+from apps.inventory.models import (
+    DamageReport,
+    Product,
+    ProductUnit,
+    StockTransaction,
+    VehicleFit,
+)
 from apps.inventory.serializers import (
     DamageReportSerializer,
     ProductSerializer,
+    ProductUnitSerializer,
     StockTransactionSerializer,
     VehicleFitSerializer,
 )
@@ -69,6 +76,20 @@ class ProductViewSet(WorkspaceViewSet):
         return Response(
             clear_store(workspace=request.workspace, mode=mode, performed_by=request.user)
         )
+
+
+class ProductUnitViewSet(WorkspaceViewSet):
+    """The ways a product can be sold, and what each one costs.
+
+    Owner-only deletion comes from the base viewset, same as everything else:
+    a cashier may correct a price, but removing a way of selling something is
+    the owner's call.
+    """
+
+    queryset = ProductUnit.objects.select_related("product").all()
+    serializer_class = ProductUnitSerializer
+    filterset_fields = ["product"]
+    ordering_fields = ["sort_order", "factor", "name"]
 
 
 class VehicleFitViewSet(WorkspaceViewSet):

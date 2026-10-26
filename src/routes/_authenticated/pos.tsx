@@ -21,6 +21,7 @@ import {
   outstanding,
   debtStatus,
   type Product,
+  type ProductUnit,
 } from "@/lib/data";
 import { insertRows, checkoutSale } from "@/lib/db";
 import {
@@ -70,7 +71,19 @@ export const Route = createFileRoute("/_authenticated/pos")({
   component: POS,
 });
 
-type CartLine = { product: Product; qty: number };
+/** `qty` counts `unit`, not base units. Two quarter-kilos is qty 2 with the
+ *  quarter unit, and takes 0.5 kg off the shelf. The two numbers differ for
+ *  anything sold in parts, so they are kept apart rather than conflated. */
+type CartLine = { product: Product; qty: number; unit: ProductUnit | null };
+
+/** How much of the shelf this line actually uses. */
+const baseQty = (l: CartLine) => l.qty * (l.unit ? Number(l.unit.factor) : 1);
+
+/** Smallest first: quarter, half, kilo, sack — which is how a till reads. */
+const unitsOf = (p: Product) =>
+  [...(p.units ?? [])].sort(
+    (a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0) || Number(a.factor) - Number(b.factor),
+  );
 type Receipt = {
   number: string;
   date: string;
@@ -95,6 +108,8 @@ function POS() {
   const [query, setQuery] = useState("");
   const [saleType, setSaleType] = useState<"retail" | "wholesale">("retail");
   const [cart, setCart] = useState<CartLine[]>([]);
+  // Which product is showing its unit buttons, if any.
+  const [picking, setPicking] = useState<string | null>(null);
   const [payment, setPayment] = useState("cash");
   const [customerId, setCustomerId] = useState("walkin");
   const [customerName, setCustomerName] = useState("");
@@ -147,13 +162,19 @@ function POS() {
       .slice(0, 60);
   }, [products, query]);
 
-  const linePrice = (l: CartLine) => tieredPrice(l.product, saleType, l.qty);
+  const linePrice = (l: CartLine) => tieredPrice(l.product, saleType, l.qty, l.unit);
   const subtotal = cart.reduce((a, l) => a + linePrice(l) * l.qty, 0);
   const total = override ?? subtotal;
   const discount = Math.max(0, subtotal - total);
-  const cost = cart.reduce((a, l) => a + Number(l.product.unit_buying_price) * l.qty, 0);
+  // Cost follows the size sold, not the count of it: half a kilo costs half
+  // of what the kilo cost to buy, however it is priced on the way out.
+  const cost = cart.reduce(
+    (a, l) => a + Number(l.product.unit_buying_price) * baseQty(l),
+    0,
+  );
   const bottlesInCart = cart.reduce(
-    (a, l) => a + (l.product.is_glass_bottle ? Number(l.product.bottles_per_unit || 1) * l.qty : 0),
+    (a, l) =>
+      a + (l.product.is_glass_bottle ? Number(l.product.bottles_per_unit || 1) * baseQty(l) : 0),
     0,
   );
 
@@ -174,26 +195,43 @@ function POS() {
         : `${customer?.name} has an unpaid balance of ${ugx(customerDebt)}. Clear it before another glass-bottle credit sale.`
       : null;
 
-  const add = (p: Product) => {
+  const add = (p: Product, unit: ProductUnit | null = null) => {
     setOverride(null);
     // Pharmacy rule: the counter must see this before it sells.
     if (p.prescription_only) {
       toast.warning(`${p.name} is prescription only — check the prescription first`);
     }
+    const chosen = unit ?? unitsOf(p).find((u) => u.is_default) ?? null;
     setCart((prev) => {
-      const found = prev.find((l) => l.product.id === p.id);
-      if (found) return prev.map((l) => (l.product.id === p.id ? { ...l, qty: l.qty + 1 } : l));
-      return [...prev, { product: p, qty: 1 }];
+      // Keyed on product *and* unit: a quarter and a kilo of the same sugar
+      // are two lines, because they are two prices.
+      const found = prev.find(
+        (l) => l.product.id === p.id && (l.unit?.id ?? null) === (chosen?.id ?? null),
+      );
+      if (found) {
+        return prev.map((l) => (l === found ? { ...l, qty: l.qty + 1 } : l));
+      }
+      return [...prev, { product: p, qty: 1, unit: chosen }];
     });
+    setPicking(null);
   };
 
-  const setQty = (id: string, qty: number) => {
+  /** Lines are addressed by product+unit, since one product can be on several. */
+  const lineKey = (l: CartLine) => `${l.product.id}:${l.unit?.id ?? ""}`;
+
+  const setQty = (key: string, qty: number) => {
     setOverride(null);
     setCart((prev) =>
       qty <= 0
-        ? prev.filter((l) => l.product.id !== id)
-        : prev.map((l) => (l.product.id === id ? { ...l, qty } : l)),
+        ? prev.filter((l) => lineKey(l) !== key)
+        : prev.map((l) => (lineKey(l) === key ? { ...l, qty } : l)),
     );
+  };
+
+  /** Change which unit a line is rung up in, keeping the quantity. */
+  const setLineUnit = (key: string, unit: ProductUnit | null) => {
+    setOverride(null);
+    setCart((prev) => prev.map((l) => (lineKey(l) === key ? { ...l, unit } : l)));
   };
 
   const checkout = async () => {
@@ -201,7 +239,10 @@ function POS() {
     if (!user) return toast.error("Not signed in");
     // Services have no shelf to run out: a consultation or a delivery trip is
     // sold as often as it is asked for.
-    const overs = cart.filter((l) => !l.product.is_service && l.qty > l.product.stock_quantity);
+    // Compared in base units: three quarter-kilos is 0.75 off the shelf, not 3.
+    const overs = cart.filter(
+      (l) => !l.product.is_service && baseQty(l) > Number(l.product.stock_quantity),
+    );
     if (overs.length) return toast.error(`Not enough stock for ${overs[0].product.name}`);
     if (isCredit && !customer) return toast.error("Pick a saved customer for a credit sale");
     if (bottleBlock) return toast.error(bottleBlock);
@@ -220,8 +261,10 @@ function POS() {
         lines: cart.map((l) => ({
           product_id: l.product.id,
           quantity: l.qty,
+          unit: l.unit?.name ?? "",
+          unit_factor: l.unit ? Number(l.unit.factor) : 1,
           unit_price: linePrice(l),
-          unit_cost: Number(l.product.unit_buying_price),
+          unit_cost: Number(l.product.unit_buying_price) * (l.unit ? Number(l.unit.factor) : 1),
           subtotal: linePrice(l) * l.qty,
         })),
       });
@@ -230,7 +273,9 @@ function POS() {
         await insertRows("debts", {
           customer_id: customer.id,
           sale_id: sale.id,
-          items_summary: cart.map((l) => `${l.qty} x ${l.product.name}`).join(", "),
+          items_summary: cart
+            .map((l) => `${num(l.qty)}${l.unit ? ` ${l.unit.name}` : ""} x ${l.product.name}`)
+            .join(", "),
           total_value: total,
           amount_paid: 0,
           issue_date: new Date().toISOString().slice(0, 10),
@@ -263,7 +308,11 @@ function POS() {
       setReceipt({
         number: String(sale.id).slice(0, 8).toUpperCase(),
         date: new Date().toLocaleString("en-GB"),
-        lines: cart.map((l) => ({ name: l.product.name, qty: l.qty, price: linePrice(l) })),
+        lines: cart.map((l) => ({
+          name: l.unit ? `${l.product.name} (${l.unit.name})` : l.product.name,
+          qty: l.qty,
+          price: linePrice(l),
+        })),
         total,
         discount,
         saleType,
@@ -323,35 +372,70 @@ function POS() {
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {filtered.map((p) => {
             const low = !p.is_service && p.stock_quantity <= p.reorder_level;
+            const units = unitsOf(p);
+            const open = picking === p.id;
+            const cheapest = units.length
+              ? units.reduce((a, u) => (Number(u.price) < Number(a.price) ? u : a))
+              : null;
             return (
-              <button
+              <div
                 key={p.id}
-                onClick={() => add(p)}
-                disabled={!p.is_service && p.stock_quantity <= 0}
-                className="rounded-xl border border-border bg-card p-4 text-left shadow-[var(--shadow-card)] transition-colors hover:border-primary disabled:opacity-50"
+                className="rounded-xl border border-border bg-card p-4 shadow-[var(--shadow-card)] transition-colors hover:border-primary"
               >
-                <p className="text-sm font-semibold leading-tight">{p.name}</p>
-                <p className="mt-0.5 text-[11px] text-muted-foreground">{p.category}</p>
-                {p.bulk_min_qty > 0 && p.bulk_discount_percent > 0 && (
-                  <p className="mt-1 text-[11px] font-medium text-success">
-                    {p.bulk_min_qty}+ → {p.bulk_discount_percent}% off
-                  </p>
+                <button
+                  type="button"
+                  // A product sold in parts asks which part first. One sold
+                  // whole goes straight in, as it always did.
+                  onClick={() => (units.length ? setPicking(open ? null : p.id) : add(p))}
+                  disabled={!p.is_service && p.stock_quantity <= 0}
+                  className="w-full text-left disabled:opacity-50"
+                >
+                  <p className="text-sm font-semibold leading-tight">{p.name}</p>
+                  <p className="mt-0.5 text-[11px] text-muted-foreground">{p.category}</p>
+                  {p.bulk_min_qty > 0 && p.bulk_discount_percent > 0 && (
+                    <p className="mt-1 text-[11px] font-medium text-success">
+                      {p.bulk_min_qty}+ → {p.bulk_discount_percent}% off
+                    </p>
+                  )}
+                  <div className="mt-3 flex items-end justify-between">
+                    <span className="tabular text-base font-bold text-success">
+                      {cheapest
+                        ? `from ${ugx(tieredPrice(p, saleType, 1, cheapest))}`
+                        : ugx(tieredPrice(p, saleType, 1))}
+                    </span>
+                    <Badge
+                      variant="outline"
+                      className={cn(
+                        "tabular text-[11px]",
+                        low && "border-warning bg-warning-soft text-warning-foreground",
+                      )}
+                    >
+                      {p.is_service
+                        ? "service"
+                        : `${num(p.stock_quantity)}${p.unit_of_measure ? ` ${p.unit_of_measure}` : ""} left`}
+                    </Badge>
+                  </div>
+                </button>
+
+                {open && units.length > 0 && (
+                  <div className="mt-3 grid grid-cols-2 gap-1.5 border-t border-border pt-3">
+                    {units.map((u) => (
+                      <button
+                        key={u.id}
+                        type="button"
+                        onClick={() => add(p, u)}
+                        disabled={!p.is_service && Number(u.factor) > Number(p.stock_quantity)}
+                        className="rounded-lg border border-border px-2 py-1.5 text-center transition-colors hover:border-primary hover:bg-primary/5 disabled:opacity-40"
+                      >
+                        <span className="block text-xs font-semibold">{u.name}</span>
+                        <span className="tabular block text-[11px] text-success">
+                          {ugx(tieredPrice(p, saleType, 1, u))}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
                 )}
-                <div className="mt-3 flex items-end justify-between">
-                  <span className="tabular text-base font-bold text-success">
-                    {ugx(tieredPrice(p, saleType, 1))}
-                  </span>
-                  <Badge
-                    variant="outline"
-                    className={cn(
-                      "tabular text-[11px]",
-                      low && "border-warning bg-warning-soft text-warning-foreground",
-                    )}
-                  >
-                    {p.is_service ? "service" : `${num(p.stock_quantity)} left`}
-                  </Badge>
-                </div>
-              </button>
+              </div>
             );
           })}
           {filtered.length === 0 && (
@@ -377,36 +461,89 @@ function POS() {
             {cart.length === 0 && (
               <p className="text-sm text-muted-foreground">Tap an item to add it to the cart.</p>
             )}
-            {cart.map((l) => (
-              <div key={l.product.id} className="rounded-lg border border-border p-2">
+            {cart.map((l) => {
+              const key = lineKey(l);
+              const units = unitsOf(l.product);
+              return (
+              <div key={key} className="rounded-lg border border-border p-2">
                 <div className="flex items-start justify-between gap-2">
-                  <p className="text-sm font-medium leading-tight">{l.product.name}</p>
-                  <button onClick={() => setQty(l.product.id, 0)}>
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium leading-tight">{l.product.name}</p>
+                    {l.unit && (
+                      <p className="text-[11px] text-muted-foreground">
+                        {l.unit.name} · {ugx(linePrice(l))} each
+                      </p>
+                    )}
+                  </div>
+                  <button onClick={() => setQty(key, 0)}>
                     <Trash2 className="size-3.5 text-muted-foreground hover:text-destructive" />
                   </button>
                 </div>
+
+                {/* Rung up in the wrong size is the commonest slip at a
+                    counter, so changing it is one tap rather than a delete
+                    and a re-add. */}
+                {units.length > 1 && (
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    {units.map((u) => (
+                      <button
+                        key={u.id}
+                        type="button"
+                        onClick={() => setLineUnit(key, u)}
+                        className={cn(
+                          "rounded border px-1.5 py-0.5 text-[11px] transition-colors",
+                          l.unit?.id === u.id
+                            ? "border-primary bg-primary/10 font-semibold text-primary"
+                            : "border-border text-muted-foreground hover:border-primary/50",
+                        )}
+                      >
+                        {u.name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
                 <div className="mt-2 flex items-center justify-between">
                   <div className="flex items-center gap-1">
                     <Button
                       size="icon"
                       variant="outline"
                       className="size-7"
-                      onClick={() => setQty(l.product.id, l.qty - 1)}
+                      onClick={() => setQty(key, l.qty - 1)}
                     >
                       <Minus className="size-3" />
                     </Button>
-                    <span className="tabular w-8 text-center text-sm">{l.qty}</span>
+                    {/* Typed, not just stepped: 1.5 kg is one entry, not three
+                        taps of a half. */}
+                    <Input
+                      inputMode="decimal"
+                      value={l.qty}
+                      onChange={(e) => {
+                        const next = Number(e.target.value);
+                        if (!Number.isNaN(next)) setQty(key, next);
+                      }}
+                      className="tabular h-7 w-14 px-1 text-center text-sm"
+                    />
                     <Button
                       size="icon"
                       variant="outline"
                       className="size-7"
-                      onClick={() => setQty(l.product.id, l.qty + 1)}
+                      onClick={() => setQty(key, l.qty + 1)}
                     >
                       <Plus className="size-3" />
                     </Button>
                   </div>
                   <span className="tabular text-sm font-semibold">{ugx(linePrice(l) * l.qty)}</span>
                 </div>
+
+                {/* What this line actually takes off the shelf, when that is
+                    not the same number as the quantity rung up. */}
+                {l.unit && Number(l.unit.factor) !== 1 && (
+                  <p className="mt-1 text-[11px] text-muted-foreground">
+                    Takes {num(baseQty(l))}
+                    {l.product.unit_of_measure ? ` ${l.product.unit_of_measure}` : ""} from stock
+                  </p>
+                )}
                 {l.product.bulk_min_qty > 0 &&
                   l.product.bulk_discount_percent > 0 &&
                   l.qty >= l.product.bulk_min_qty && (
@@ -415,7 +552,8 @@ function POS() {
                     </p>
                   )}
               </div>
-            ))}
+              );
+            })}
           </div>
 
           <div className="space-y-1.5">

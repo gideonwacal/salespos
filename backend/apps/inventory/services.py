@@ -7,13 +7,15 @@ a row lock on the product, so two concurrent sales cannot both read the same
 starting quantity and lose a decrement.
 """
 
+from decimal import Decimal
+
 from django.db import transaction
 from django.db.models import F
 
 from apps.inventory.models import DamageReport, Product, StockTransaction
 
 
-def signed_delta(txn_type: str, quantity: int) -> int:
+def signed_delta(txn_type: str, quantity):
     """How a transaction of this type changes stock on hand.
 
     stock_in and adjustment add (an adjustment may be negative); sale and damage
@@ -25,33 +27,50 @@ def signed_delta(txn_type: str, quantity: int) -> int:
 
 
 @transaction.atomic
-def apply_stock_delta(product_id, workspace, delta: int) -> Product:
-    """Move a product's stock by `delta`, clamped at zero."""
+def apply_stock_delta(product_id, workspace, delta) -> Product:
+    """Move a product's stock by `delta` base units, clamped at zero."""
     product = Product.objects.select_for_update().get(
         pk=product_id, workspace=workspace
     )
-    product.stock_quantity = max(0, product.stock_quantity + delta)
+    product.stock_quantity = max(Decimal("0"), product.stock_quantity + Decimal(str(delta)))
     product.save(update_fields=["stock_quantity"])
     return product
 
 
 @transaction.atomic
 def record_stock_transaction(
-    *, workspace, product, type: str, quantity: int, notes: str = "",
-    expiry_date=None, performed_by=None,
+    *, workspace, product, type: str, quantity, notes: str = "",
+    expiry_date=None, performed_by=None, unit: str = "",
 ) -> StockTransaction:
-    """File a stock transaction and move the product's quantity to match."""
+    """File a stock transaction and move the product's quantity to match.
+
+    `quantity` counts `unit`, which names one of the product's sell units. Two
+    50kg sacks arriving is quantity 2 with unit "50kg sack", and puts 100 on
+    the shelf — the shop counts the delivery the way the delivery note does,
+    and the conversion happens here rather than in somebody's head.
+
+    Omitting `unit` means base units, which is how every movement worked
+    before parts existed.
+    """
+    from apps.sales.services import resolve_unit
+
+    quantity = Decimal(str(quantity))
+    unit_name, factor, _ = resolve_unit(product, unit)
+    base = quantity * factor
+
     txn = StockTransaction.objects.create(
         workspace=workspace,
         product=product,
         type=type,
-        quantity=quantity,
+        quantity=base,
+        unit_name=unit_name,
+        unit_factor=factor,
         notes=notes,
         expiry_date=expiry_date,
         performed_by=performed_by,
     )
 
-    apply_stock_delta(product.pk, workspace, signed_delta(type, quantity))
+    apply_stock_delta(product.pk, workspace, signed_delta(type, base))
 
     # Restocking with a new expiry date updates the product's date, matching the
     # old sync_product_expiry trigger.
@@ -66,7 +85,7 @@ def record_stock_transaction(
 
 @transaction.atomic
 def record_damage(
-    *, workspace, product, quantity: int, reason: str = "", photo_url=None,
+    *, workspace, product, quantity, reason: str = "", photo_url=None,
     reported_by=None,
 ) -> DamageReport:
     """Write off damaged stock and leave an audit trail in stock_transactions."""
@@ -87,7 +106,7 @@ def record_damage(
         notes=reason or "Damaged goods",
         performed_by=reported_by,
     )
-    apply_stock_delta(product.pk, workspace, -abs(quantity))
+    apply_stock_delta(product.pk, workspace, -abs(Decimal(str(quantity))))
     return report
 
 
@@ -168,10 +187,17 @@ def inventory_value(workspace) -> dict:
     zero = Value(Decimal("0"), output_field=money)
 
     rows = Product.objects.filter(workspace=workspace, is_service=False)
+    # stock_quantity is a decimal now, so the zero it falls back to has to be
+    # one too: coalescing a decimal sum with an integer is a mixed-type
+    # expression and Django refuses to guess which was meant.
+    quantity = DecimalField(max_digits=14, decimal_places=3)
     agg = rows.aggregate(
         cost=Coalesce(Sum(F("unit_buying_price") * F("stock_quantity"), output_field=money), zero),
         retail=Coalesce(Sum(F("unit_selling_price") * F("stock_quantity"), output_field=money), zero),
-        units=Coalesce(Sum("stock_quantity"), Value(0)),
+        units=Coalesce(
+            Sum("stock_quantity", output_field=quantity),
+            Value(Decimal("0"), output_field=quantity),
+        ),
     )
     return {
         "cost": agg["cost"] or Decimal("0"),

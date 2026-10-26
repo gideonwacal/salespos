@@ -1,6 +1,12 @@
 from rest_framework import serializers
 
-from apps.inventory.models import DamageReport, Product, StockTransaction, VehicleFit
+from apps.inventory.models import (
+    DamageReport,
+    Product,
+    ProductUnit,
+    StockTransaction,
+    VehicleFit,
+)
 
 
 class VehicleFitSerializer(serializers.ModelSerializer):
@@ -38,8 +44,33 @@ class VehicleFitSerializer(serializers.ModelSerializer):
         return value
 
 
+class ProductUnitSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ProductUnit
+        fields = ["id", "product", "name", "factor", "price", "wholesale_price",
+                  "is_default", "sort_order", "created_at"]
+        read_only_fields = ["id", "created_at"]
+
+    def validate_factor(self, value):
+        if value <= 0:
+            raise serializers.ValidationError(
+                "How many of the base unit is this? It has to be more than zero."
+            )
+        return value
+
+    def validate_product(self, value):
+        # A unit must belong to a product of this workspace, not someone else's.
+        if value.workspace_id != self.context["request"].workspace.id:
+            raise serializers.ValidationError("That product is not in this workspace.")
+        return value
+
+
 class ProductSerializer(serializers.ModelSerializer):
     low_stock = serializers.BooleanField(read_only=True)
+    # Nested read-only: the till needs every way an item can be sold in the
+    # same request that lists it, and units are edited through their own
+    # endpoint.
+    units = ProductUnitSerializer(many=True, read_only=True)
     # Nested read-only: the catalogue shows what a part fits, and fitments are
     # added and removed through their own endpoint.
     fits = VehicleFitSerializer(many=True, read_only=True)
@@ -64,6 +95,7 @@ class ProductSerializer(serializers.ModelSerializer):
             "expiry_date",
             "barcode",
             "unit_of_measure",
+            "units",
             "batch_number",
             "prescription_only",
             "is_service",

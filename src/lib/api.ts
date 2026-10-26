@@ -212,6 +212,9 @@ export async function register(input: {
     whatsapp: {
       number: string;
       pairing_code: string;
+      /** Opens WhatsApp with the code already typed. Empty when no business
+       *  number is configured on the server. */
+      activation_link: string;
       welcome_sent: boolean;
     } | null;
   }>("/auth/register/", {
@@ -285,6 +288,7 @@ export function logout() {
 /** Frontend table name -> REST collection. Tables absent here have no backend yet. */
 export const ENDPOINTS: Record<string, string> = {
   products: "products",
+  product_units: "product-units",
   stock_transactions: "stock-transactions",
   damage_reports: "damage-reports",
   vehicle_fits: "vehicle-fits",

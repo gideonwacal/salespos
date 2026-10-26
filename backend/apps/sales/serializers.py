@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from rest_framework import serializers
 
 from apps.sales.models import Sale, SaleItem
@@ -5,6 +7,11 @@ from apps.sales.models import Sale, SaleItem
 
 class SaleItemSerializer(serializers.ModelSerializer):
     product_name = serializers.SerializerMethodField()
+    # What actually came off the shelf, as opposed to how many units were
+    # rung up. The receipt wants the second; a stock report wants the first.
+    base_quantity = serializers.DecimalField(
+        max_digits=14, decimal_places=3, read_only=True
+    )
 
     def get_product_name(self, obj) -> str:
         """The name the line was sold under.
@@ -26,6 +33,9 @@ class SaleItemSerializer(serializers.ModelSerializer):
             "product",
             "product_name",
             "quantity",
+            "unit_name",
+            "unit_factor",
+            "base_quantity",
             "unit_price",
             "unit_cost",
             "subtotal",
@@ -37,7 +47,16 @@ class SaleItemInputSerializer(serializers.Serializer):
     """One line of a checkout request."""
 
     product_id = serializers.UUIDField()
-    quantity = serializers.IntegerField(min_value=1)
+    # Decimal, so 1.5 kg can be keyed straight in. min_value excludes zero
+    # without excluding a quarter.
+    quantity = serializers.DecimalField(
+        max_digits=14, decimal_places=3, min_value=Decimal("0.001")
+    )
+    # Names one of the product's sell units: "1/4 kg", "Crate of 24". Omitted
+    # means one whole base unit, which is how checkout worked before parts.
+    unit = serializers.CharField(
+        max_length=40, required=False, allow_blank=True, default=""
+    )
     unit_price = serializers.DecimalField(
         max_digits=14, decimal_places=2, required=False, allow_null=True
     )

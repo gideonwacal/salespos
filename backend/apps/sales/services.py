@@ -10,22 +10,58 @@ from decimal import Decimal
 from django.db import transaction
 from rest_framework.exceptions import ValidationError
 
+from apps.core.quantities import trim
 from apps.inventory.models import Product, StockTransaction
 from apps.sales.models import Sale, SaleItem
 
 
-def line_unit_price(product: Product, quantity: int, sale_type: str) -> Decimal:
-    """Price one unit, applying wholesale and bulk-discount rules.
+def resolve_unit(product: Product, unit_name: str):
+    """Which way this line is being sold.
 
-    Mirrors what the POS screen shows, so the server never trusts a client-sent
-    price it can compute itself.
+    Returns (name, factor, unit) where `unit` may be None. A product with no
+    units configured, or a line that names none, falls back to one whole base
+    unit at the product's own price — which is exactly how every sale worked
+    before parts existed, so nothing already on a shelf changes behaviour.
     """
-    if sale_type == "wholesale" and product.wholesale_price is not None:
-        price = product.wholesale_price
-    else:
-        price = product.unit_selling_price
+    name = (unit_name or "").strip()
+    if not name:
+        default = product.units.filter(is_default=True).first()
+        if default is None:
+            return "", Decimal("1"), None
+        return default.name, Decimal(default.factor), default
 
-    if product.bulk_min_qty and quantity >= product.bulk_min_qty:
+    unit = product.units.filter(name__iexact=name).first()
+    if unit is None:
+        raise ValidationError(
+            {"items": f"{product.name} is not sold as “{name}”."}
+        )
+    return unit.name, Decimal(unit.factor), unit
+
+
+def line_unit_price(
+    product: Product, quantity, sale_type: str, unit=None
+) -> Decimal:
+    """What one of the chosen unit costs.
+
+    A unit carries its own price rather than a share of the product's, because
+    breaking bulk earns a premium: a quarter kilo sells for more than a
+    quarter of the kilo price, and deriving it by multiplication would
+    undercharge on every part sold.
+
+    Mirrors what the POS screen shows, so the server never trusts a
+    client-sent price it can compute itself.
+    """
+    if unit is not None:
+        if sale_type == "wholesale" and unit.wholesale_price is not None:
+            price = Decimal(unit.wholesale_price)
+        else:
+            price = Decimal(unit.price)
+    elif sale_type == "wholesale" and product.wholesale_price is not None:
+        price = Decimal(product.wholesale_price)
+    else:
+        price = Decimal(product.unit_selling_price)
+
+    if product.bulk_min_qty and Decimal(quantity) >= Decimal(product.bulk_min_qty):
         discount = Decimal(product.bulk_discount_percent) / Decimal(100)
         price = price * (Decimal(1) - discount)
 
@@ -39,9 +75,15 @@ def create_sale(
 ) -> Sale:
     """Ring up a sale.
 
-    `items` is a list of {product_id, quantity, unit_price?}. A client-supplied
-    unit_price is honoured (manual discounts happen at the counter) but falls back
-    to the computed price when absent.
+    `items` is a list of {product_id, quantity, unit?, unit_price?}.
+
+    `unit` names one of the product's sell units — "1/4 kg", "Crate of 24".
+    Omitted, the line is one whole base unit, which is how every sale worked
+    before parts existed. `quantity` counts those units, so two quarter-kilos
+    is quantity 2 and takes 0.5 kg off the shelf.
+
+    A client-supplied unit_price is honoured (manual discounts happen at the
+    counter) but falls back to the computed price when absent.
     """
     if not items:
         raise ValidationError({"items": "A sale needs at least one item."})
@@ -75,23 +117,37 @@ def create_sale(
 
     for item in items:
         product = products[item["product_id"]]
-        quantity = int(item["quantity"])
+        quantity = Decimal(str(item["quantity"]))
         if quantity <= 0:
             raise ValidationError({"items": "Quantity must be greater than zero."})
+
+        unit_name, factor, unit = resolve_unit(product, item.get("unit", ""))
+        # What leaves the shelf, as opposed to what is being charged for.
+        taken = quantity * factor
+
         # A service has no shelf to run down: a consultation or a delivery trip
         # is sold as often as it is asked for.
-        if not product.is_service and quantity > product.stock_quantity:
+        if not product.is_service and taken > product.stock_quantity:
             raise ValidationError(
-                {"items": f"Only {product.stock_quantity} of {product.name} left in stock."}
+                {
+                    "items": (
+                        f"Only {trim(product.stock_quantity)}"
+                        f"{' ' + product.unit_of_measure if product.unit_of_measure else ''}"
+                        f" of {product.name} left in stock."
+                    )
+                }
             )
 
         unit_price = item.get("unit_price")
         unit_price = (
             Decimal(str(unit_price))
             if unit_price is not None
-            else line_unit_price(product, quantity, sale_type)
+            else line_unit_price(product, quantity, sale_type, unit)
         )
-        unit_cost = product.unit_buying_price
+        # Cost follows the size of what was sold, not the count of it: a
+        # quarter kilo costs a quarter of what a kilo cost to buy, however it
+        # is priced on the way out.
+        unit_cost = (Decimal(product.unit_buying_price) * factor).quantize(Decimal("0.01"))
         subtotal = (unit_price * quantity).quantize(Decimal("0.01"))
 
         SaleItem.objects.create(
@@ -100,13 +156,15 @@ def create_sale(
             product=product,
             product_name=product.name,
             quantity=quantity,
+            unit_name=unit_name,
+            unit_factor=factor,
             unit_price=unit_price,
             unit_cost=unit_cost,
             subtotal=subtotal,
         )
 
         if not product.is_service:
-            product.stock_quantity = max(0, product.stock_quantity - quantity)
+            product.stock_quantity = max(Decimal("0"), product.stock_quantity - taken)
             product.save(update_fields=["stock_quantity"])
 
             # Audit trail, exactly as the old apply_sale_item trigger did.
@@ -116,7 +174,9 @@ def create_sale(
                 workspace=workspace,
                 product=product,
                 type="sale",
-                quantity=quantity,
+                quantity=taken,
+                unit_name=unit_name,
+                unit_factor=factor,
                 notes="POS sale",
                 performed_by=cashier,
             )
@@ -149,18 +209,33 @@ def amend_sale(
     if not items:
         raise ValidationError({"items": "A sale needs at least one item."})
 
+    # Settled in base units throughout. Two quarter-kilos and one kilo are
+    # 1.5 kg off the shelf; comparing counts of units would make them 3.
     old_lines = list(sale.items.all())
     old_quantities: dict = {}
     for line in old_lines:
-        old_quantities[line.product_id] = old_quantities.get(line.product_id, 0) + line.quantity
+        old_quantities[line.product_id] = (
+            old_quantities.get(line.product_id, Decimal("0")) + line.base_quantity
+        )
 
     new_quantities: dict = {}
+    resolved: list = []
     for item in items:
-        quantity = int(item["quantity"])
+        quantity = Decimal(str(item["quantity"]))
         if quantity <= 0:
             raise ValidationError({"items": "Quantity must be greater than zero."})
+        product = Product.objects.filter(
+            pk=item["product_id"], workspace=sale.workspace
+        ).first()
+        if product is None:
+            raise ValidationError(
+                {"items": f"Unknown product for this workspace: {item['product_id']}"}
+            )
+        unit_name, factor, unit = resolve_unit(product, item.get("unit", ""))
+        resolved.append({"item": item, "quantity": quantity, "unit_name": unit_name,
+                         "factor": factor, "unit": unit})
         new_quantities[item["product_id"]] = (
-            new_quantities.get(item["product_id"], 0) + quantity
+            new_quantities.get(item["product_id"], Decimal("0")) + quantity * factor
         )
 
     # Lock everything on either side of the correction, in id order, so an
@@ -182,14 +257,14 @@ def amend_sale(
     # Check every increase before moving anything, so a rejected amendment
     # leaves the sale and the shelf untouched.
     for product_id, wanted in new_quantities.items():
-        extra = wanted - old_quantities.get(product_id, 0)
+        extra = wanted - old_quantities.get(product_id, Decimal("0"))
         product = products[product_id]
         if not product.is_service and extra > 0 and extra > product.stock_quantity:
             raise ValidationError(
                 {
                     "items": (
-                        f"Only {product.stock_quantity} more of {product.name} "
-                        "left in stock."
+                        f"Only {trim(product.stock_quantity)} more of "
+                        f"{product.name} left in stock."
                     )
                 }
             )
@@ -202,17 +277,18 @@ def amend_sale(
     total_amount = Decimal("0")
     total_cost = Decimal("0")
 
-    for item in items:
+    for line in resolved:
+        item = line["item"]
         product = products[item["product_id"]]
-        quantity = int(item["quantity"])
+        quantity, factor, unit = line["quantity"], line["factor"], line["unit"]
 
         unit_price = item.get("unit_price")
         unit_price = (
             Decimal(str(unit_price))
             if unit_price is not None
-            else line_unit_price(product, quantity, resolved_type)
+            else line_unit_price(product, quantity, resolved_type, unit)
         )
-        unit_cost = product.unit_buying_price
+        unit_cost = (Decimal(product.unit_buying_price) * factor).quantize(Decimal("0.01"))
         subtotal = (unit_price * quantity).quantize(Decimal("0.01"))
 
         SaleItem.objects.create(
@@ -221,6 +297,8 @@ def amend_sale(
             product=product,
             product_name=product.name,
             quantity=quantity,
+            unit_name=line["unit_name"],
+            unit_factor=factor,
             unit_price=unit_price,
             unit_cost=unit_cost,
             subtotal=subtotal,
@@ -232,13 +310,13 @@ def amend_sale(
     # Settle the shelf against the net change, and leave a trail saying why.
     for product_id in sorted(touched, key=str):
         product = products[product_id]
-        before = old_quantities.get(product_id, 0)
-        after = new_quantities.get(product_id, 0)
+        before = old_quantities.get(product_id, Decimal("0"))
+        after = new_quantities.get(product_id, Decimal("0"))
         delta = after - before
         if delta == 0 or product.is_service:
             continue
 
-        product.stock_quantity = max(0, product.stock_quantity - delta)
+        product.stock_quantity = max(Decimal("0"), product.stock_quantity - delta)
         product.save(update_fields=["stock_quantity"])
 
         StockTransaction.objects.create(
@@ -248,7 +326,7 @@ def amend_sale(
             # Positive puts stock back, negative takes more off, so the ledger
             # reads the same way round as every other adjustment.
             quantity=-delta,
-            notes=f"Sale {sale.id} corrected: {before} -> {after}",
+            notes=f"Sale {sale.id} corrected: {trim(before)} -> {trim(after)}",
             performed_by=actor,
         )
 
@@ -283,13 +361,16 @@ def void_sale(sale: Sale) -> None:
         # Nothing came off the shelf for a service, so nothing goes back on it.
         if product.is_service:
             continue
-        product.stock_quantity += item.quantity
+        # Base units: a voided quarter-kilo puts 0.25 back, not 1.
+        product.stock_quantity += item.base_quantity
         product.save(update_fields=["stock_quantity"])
         StockTransaction.objects.create(
             workspace=sale.workspace,
             product=product,
             type="adjustment",
-            quantity=item.quantity,
+            quantity=item.base_quantity,
+            unit_name=item.unit_name,
+            unit_factor=item.unit_factor,
             notes=f"Voided sale {sale.id}",
             performed_by=sale.cashier,
         )

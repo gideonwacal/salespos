@@ -48,7 +48,16 @@ class SaleItem(WorkspaceScoped):
     # What the item was called when it was sold. Snapshotted rather than looked
     # up, so a rename never rewrites history and a deletion never erases it.
     product_name = models.CharField(max_length=200, blank=True, default="")
-    quantity = models.PositiveIntegerField()
+    # How many of `unit_name` were sold: 2 quarter-kilos, or 1.5 kg typed
+    # straight in. Not the amount that leaves the shelf — that is this times
+    # `unit_factor`, and the two differ whenever anything is sold in parts.
+    quantity = models.DecimalField(max_digits=14, decimal_places=3)
+    # What the counter called it, and how big that is in base units.
+    # Snapshotted beside product_name, and for the same reason: retiring a
+    # unit must not rewrite the receipts it was sold on.
+    unit_name = models.CharField(max_length=40, blank=True, default="")
+    unit_factor = models.DecimalField(max_digits=12, decimal_places=4, default=1)
+    # Per unit sold, not per base unit: a quarter-kilo line prices the quarter.
     unit_price = models.DecimalField(max_digits=14, decimal_places=2)
     unit_cost = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     subtotal = models.DecimalField(max_digits=14, decimal_places=2)
@@ -58,4 +67,10 @@ class SaleItem(WorkspaceScoped):
         ordering = ["created_at"]
 
     def __str__(self):
-        return f"{self.quantity} x {self.product_name or self.product_id}"
+        unit = f" {self.unit_name}" if self.unit_name else ""
+        return f"{self.quantity}{unit} x {self.product_name or self.product_id}"
+
+    @property
+    def base_quantity(self):
+        """What actually came off the shelf."""
+        return self.quantity * self.unit_factor

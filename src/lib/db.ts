@@ -316,12 +316,15 @@ export async function amendSaleRows(
   // Net movement per product, so a quantity that drops returns the balance and
   // one that rises takes more off.
   const delta = new Map<string, number>();
+  // Settled in base units: two quarter-kilos corrected to one kilo is 0.5
+  // more off the shelf, not 1.
   for (const line of oldLines) {
     const id = String(line.product_id);
-    delta.set(id, (delta.get(id) ?? 0) - Number(line.quantity ?? 0));
+    const base = Number(line.quantity ?? 0) * Number(line.unit_factor ?? 1);
+    delta.set(id, (delta.get(id) ?? 0) - base);
   }
   for (const line of input.lines) {
-    delta.set(line.product_id, (delta.get(line.product_id) ?? 0) + line.quantity);
+    delta.set(line.product_id, (delta.get(line.product_id) ?? 0) + lineBase(line));
   }
 
   const products = dbSelect<Row>("products");
@@ -355,11 +358,19 @@ export async function amendSaleRows(
 
 export type CheckoutLine = {
   product_id: string;
+  /** How many of `unit` — not how much comes off the shelf. */
   quantity: number;
+  /** The sell unit's name: "1/4 kg", "Crate of 24". Blank means whole units. */
+  unit?: string;
+  /** How many base units one of `unit` is. 0.25 for a quarter kilo. */
+  unit_factor?: number;
   unit_price: number;
   unit_cost: number;
   subtotal: number;
 };
+
+/** What a line actually takes off the shelf. */
+const lineBase = (l: CheckoutLine) => l.quantity * (l.unit_factor ?? 1);
 
 /**
  * Complete a sale.
@@ -384,6 +395,9 @@ export async function checkoutSale(input: {
       items: input.lines.map((l) => ({
         product_id: l.product_id,
         quantity: l.quantity,
+        // Which size it was rung up in. The server re-derives the factor from
+        // its own units rather than trusting one sent by the browser.
+        unit: l.unit ?? "",
         // Send the price the cashier actually saw, so counter discounts stick.
         unit_price: l.unit_price,
       })),

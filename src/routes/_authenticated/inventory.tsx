@@ -1,11 +1,29 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useRef, useState } from "react";
-import { Search, Plus, Download, Upload, PackagePlus, Pencil, Trash2, ImagePlus, Camera } from "lucide-react";
+import {
+  Search,
+  Plus,
+  Download,
+  Upload,
+  PackagePlus,
+  Pencil,
+  Scale,
+  Trash2,
+  ImagePlus,
+  Camera,
+} from "lucide-react";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import { insertRows, updateRow, deleteRow } from "@/lib/db";
 import { DangerZone } from "@/components/DangerZone";
-import { useProducts, daysToExpiry, EXPIRY_WARNING_DAYS, type Product } from "@/lib/data";
+import {
+  useProducts,
+  useProductUnits,
+  daysToExpiry,
+  EXPIRY_WARNING_DAYS,
+  type Product,
+} from "@/lib/data";
+import { SellingUnits } from "@/components/SellingUnits";
 import { ugx, num } from "@/lib/format";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useIndustry } from "@/hooks/useIndustry";
@@ -80,9 +98,12 @@ function Inventory() {
   const CATEGORIES = industry.categories;
   const queryClient = useQueryClient();
   const { data: products = [] } = useProducts();
+  const { data: productUnits = [] } = useProductUnits();
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("all");
   const [editing, setEditing] = useState<Product | null>(null);
+  // Which product is having its selling sizes set up, if any.
+  const [unitsFor, setUnitsFor] = useState<Product | null>(null);
   const [form, setForm] = useState({ ...blank });
   const [open, setOpen] = useState(false);
   const [stockFor, setStockFor] = useState<Product | null>(null);
@@ -520,6 +541,20 @@ function Inventory() {
                         >
                           <Camera className="size-4" />
                         </Button>
+                        {/* Only for things with a measure: a hammer has no
+                            halves, and offering the option would suggest it
+                            does. */}
+                        {!p.is_service && p.unit_of_measure && (
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="size-8"
+                            onClick={() => setUnitsFor(p)}
+                            title="Selling sizes"
+                          >
+                            <Scale className="size-4" />
+                          </Button>
+                        )}
                         <Button
                           size="icon"
                           variant="ghost"
@@ -549,6 +584,17 @@ function Inventory() {
           </Table>
         </CardContent>
       </Card>
+
+      <SellingUnits
+
+        product={unitsFor}
+
+        units={productUnits}
+
+        onOpenChange={(v) => !v && setUnitsFor(null)}
+
+      />
+
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>

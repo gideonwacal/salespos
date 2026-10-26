@@ -268,6 +268,7 @@ function emptyTables(business: Business, users: AccountUser[]): Tables {
     business: [business as unknown as Record<string, unknown>],
     users: users as unknown as Record<string, unknown>[],
     products: [],
+    product_units: [],
     customers: [],
     debts: [],
     debt_payments: [],
@@ -359,11 +360,54 @@ function demoSeed(tradeId?: string): Tables {
         }),
         p("Bar Soap (Carton)", "Household Items", 45000, 55000, 51000, 12, 5),
         p("Matchboxes (Pack)", "General Merchandise", 4000, 6000, 5200, 60, 20),
+        // Bought as a sack, sold by the kilo and down to a quarter. Held in
+        // kilos, which is what makes 49.75 sayable.
+        p("Sugar", "General Merchandise", 3600, 4000, 3800, 150, 25, {
+          unit_of_measure: "kg",
+        }),
+        p("Rice", "General Merchandise", 4200, 4800, 4500, 80, 20, {
+          unit_of_measure: "kg",
+        }),
         p("Sugar 50kg Bale", "General Merchandise", 190000, 215000, 205000, 7, 4),
         p("Maize Flour 25kg Bag", "General Merchandise", 62000, 74000, 70000, 3, 6, {
           expiry_date: day(-3),
         }),
       ];
+
+  /**
+   * Ways to sell a product that is broken out of bulk.
+   *
+   * Each carries its own price rather than a share of the kilo price, because
+   * that is how the trade actually works: a quarter at 1,200 when the kilo is
+   * 4,000 is the premium for breaking the sack, not an error. Deriving the
+   * part price by multiplication would undercharge on every one sold.
+   */
+  const partUnits = (name: string, kilo: number, quarter: number, half: number, sack: number) => {
+    const product = products.find((x) => x.name === name);
+    if (!product) return [];
+    const unit = (label: string, factor: number, price: number, order: number, dflt = false) => ({
+      id: uid(),
+      product: product.id,
+      name: label,
+      factor,
+      price,
+      wholesale_price: null,
+      is_default: dflt,
+      sort_order: order,
+      created_at: new Date().toISOString(),
+    });
+    return [
+      unit("1/4 kg", 0.25, quarter, 0),
+      unit("1/2 kg", 0.5, half, 1),
+      unit("1 kg", 1, kilo, 2, true),
+      unit("50kg sack", 50, sack, 3),
+    ];
+  };
+
+  const product_units = [
+    ...partUnits("Sugar", 4000, 1200, 2100, 190000),
+    ...partUnits("Rice", 4800, 1400, 2500, 230000),
+  ];
 
   const customers = [
     {
@@ -758,6 +802,7 @@ function demoSeed(tradeId?: string): Tables {
     bottle_movements,
     sales,
     sale_items,
+    product_units,
     expenses,
     stock_transactions,
     suppliers,
@@ -1449,7 +1494,13 @@ function applySideEffects(tables: Tables, table: string, rows: Record<string, un
   };
 
   for (const row of rows) {
-    if (table === "sale_items") bump(String(row.product_id), -Number(row.quantity));
+    // A sale line counts its own unit, so what leaves the shelf is the
+    // quantity times how big that unit is: three quarter-kilos is 0.75 kg,
+    // not 3. Lines with no unit carry a factor of 1 and behave as before.
+    if (table === "sale_items") {
+      const base = Number(row.quantity) * Number(row.unit_factor ?? 1);
+      bump(String(row.product_id), -base);
+    }
     if (table === "damage_reports") bump(String(row.product_id), -Number(row.quantity));
     if (table === "stock_transactions") {
       const type = String(row.type);

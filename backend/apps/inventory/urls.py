@@ -3,6 +3,7 @@ from rest_framework.routers import DefaultRouter
 
 from apps.inventory.views import (
     DamageReportViewSet,
+    ProductUnitViewSet,
     ProductViewSet,
     StockTransactionViewSet,
     VehicleFitViewSet,
@@ -10,6 +11,7 @@ from apps.inventory.views import (
 
 router = DefaultRouter()
 router.register("products", ProductViewSet, basename="product")
+router.register("product-units", ProductUnitViewSet, basename="product-unit")
 router.register("stock-transactions", StockTransactionViewSet, basename="stock-transaction")
 router.register("damage-reports", DamageReportViewSet, basename="damage-report")
 router.register("vehicle-fits", VehicleFitViewSet, basename="vehicle-fit")

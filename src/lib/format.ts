@@ -126,9 +126,16 @@ export function tieredPrice(
   },
   saleType: "retail" | "wholesale",
   qty: number,
+  /** The sell unit, when the line is a part: a quarter kilo, a crate. Its own
+   *  price wins over the product's, because a part is not priced as a
+   *  fraction of the whole. */
+  unit?: { price: number; wholesale_price?: number | null } | null,
 ) {
-  const base =
-    saleType === "wholesale"
+  const base = unit
+    ? saleType === "wholesale"
+      ? Number(unit.wholesale_price ?? unit.price)
+      : Number(unit.price)
+    : saleType === "wholesale"
       ? Number(p.wholesale_price ?? p.unit_selling_price)
       : Number(p.unit_selling_price);
   const min = Number(p.bulk_min_qty ?? 0);

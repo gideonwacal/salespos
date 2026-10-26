@@ -1,6 +1,26 @@
+import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { selectRows } from "@/lib/db";
 import { type AccountUser, type Business } from "@/lib/demo";
+
+/** One way a product can be sold, and what that way costs.
+ *
+ *  The price is the unit's own, not a share of the product's: breaking bulk
+ *  earns a premium, and a quarter kilo that sells for 1,200 when the kilo is
+ *  4,000 is normal rather than a mistake. Deriving it by multiplication would
+ *  undercharge on every part sold. */
+export type ProductUnit = {
+  id: string;
+  product: string;
+  /** What the counter calls it: "1/4 kg", "Half kg", "Crate of 24". */
+  name: string;
+  /** How many of the product's base unit this is. 0.25 for a quarter kilo. */
+  factor: number;
+  price: number;
+  wholesale_price?: number | null;
+  is_default?: boolean;
+  sort_order?: number;
+};
 
 export type Product = {
   id: string;
@@ -16,7 +36,11 @@ export type Product = {
   expiry_date: string | null;
   /* Industry-specific: only surfaced by the profile that uses them. */
   barcode?: string;
+  /** What one of stock_quantity is: "kg", "litre", "bottle", "sachet". */
   unit_of_measure?: string;
+  /** Every way this product can be sold. Empty means whole units only, which
+   *  is how everything worked before parts existed. */
+  units?: ProductUnit[];
   batch_number?: string;
   prescription_only?: boolean;
   /** Charged like goods but never stocked: a consultation, a lab test, a delivery. */
@@ -286,11 +310,41 @@ function useTable<T>(key: string, table: string, opts: Opts = {}) {
 }
 
 export function useProducts() {
-  return useTable<Product>("products", "products", {
+  const products = useTable<Product>("products", "products", {
     orderBy: "name",
     ascending: true,
     // Stock is the one list two people change at once — the owner in the
     // office, the cashier at the till.
+    refreshMs: 45_000,
+  });
+  const units = useProductUnits();
+
+  // The server nests units inside each product already. The local store keeps
+  // them in their own table, so they are joined on here instead — the till
+  // then reads `p.units` the same way whichever backend is answering.
+  return useMemo(() => {
+    if (!products.data?.length || !units.data?.length) return products;
+    const byProduct = new Map<string, ProductUnit[]>();
+    for (const u of units.data) {
+      const list = byProduct.get(u.product) ?? [];
+      list.push(u);
+      byProduct.set(u.product, list);
+    }
+    return {
+      ...products,
+      data: products.data.map((p) =>
+        p.units?.length ? p : { ...p, units: byProduct.get(p.id) ?? [] },
+      ),
+    };
+  }, [products, units.data]);
+}
+
+/** Every way every product can be sold. Small enough to hold in the browser,
+ *  and the till needs all of them at once. */
+export function useProductUnits() {
+  return useTable<ProductUnit>("product_units", "product-units", {
+    orderBy: "sort_order",
+    ascending: true,
     refreshMs: 45_000,
   });
 }
